@@ -1,0 +1,11 @@
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: brain-gym-peer-auth
+  namespace: brain-gym
+spec:
+  selector:
+    matchLabels:
+      app: brain-gym
+  mtls:
+    mode: PERMISSIVE

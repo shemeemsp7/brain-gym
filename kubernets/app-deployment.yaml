@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: brain-gym-deployment
+  namespace: brain-gym
+  labels:
+    app: brain-gym
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: brain-gym
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: brain-gym
+        version: v1
+    spec:
+      imagePullSecrets:
+      - name: dockerhub-registry-secret
+      containers:
+      - name: brain-gym
+        image: shemeemsp7/brain-gym:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - configMapRef:
+            name: brain-gym-config
+        - secretRef:
+            name: brain-gym-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command: ['sh', '-c', 'until pg_isready -h postgres-service -p 5432 -U postgres; do echo waiting for postgres; sleep 2; done;']

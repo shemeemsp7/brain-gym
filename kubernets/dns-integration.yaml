@@ -1,0 +1,39 @@
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: brain-gym-external
+  namespace: brain-gym
+spec:
+  hosts:
+  - brain-gym.example.com
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  - number: 80
+    name: http
+    protocol: HTTP
+  location: MESH_EXTERNAL
+  resolution: DNS
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: brain-gym-external-service
+  namespace: brain-gym
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: brain-gym.example.com
+    external-dns.alpha.kubernetes.io/ttl: "300"
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: 8443
+    protocol: TCP
+    name: https
+  selector:
+    istio: ingressgateway

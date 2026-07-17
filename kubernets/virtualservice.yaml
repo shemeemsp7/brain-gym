@@ -1,0 +1,40 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: brain-gym-vs
+  namespace: brain-gym
+spec:
+  hosts:
+  - brain-gym.example.com
+  - brain-gym-service
+  gateways:
+  - istio-system/istio-gateway-admin
+  - mesh
+  http:
+  - match:
+    - uri:
+        prefix: /api/
+    route:
+    - destination:
+        host: brain-gym-service.brain-gym.svc.cluster.local
+        port:
+          number: 3000
+      weight: 100
+    timeout: 30s
+    retries:
+      attempts: 3
+      perTryTimeout: 10s
+    headers:
+      request:
+        add:
+          x-forwarded-proto: https
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: brain-gym-service.brain-gym.svc.cluster.local
+        port:
+          number: 3000
+      weight: 100
+    timeout: 30s

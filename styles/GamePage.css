@@ -1,0 +1,103 @@
+/* backend/styles/GamePage.css */
+
+.game-container {
+  width: 80vw;
+  max-width: 1200px;
+  min-width: 320px;
+  margin: 48px auto;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 2px 16px #0002;
+  padding: 32px 28px;
+}
+
+.game-title {
+  text-align: center;
+  font-size: 2rem;
+  margin-bottom: 18px;
+  color: #0f172a;
+}
+
+.challenge-timer {
+  text-align: right;
+  font-size: 1.08rem;
+  color: #334155;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.challenge-box {
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 18px;
+  margin-bottom: 18px;
+  box-shadow: 0 1px 6px #0001;
+}
+
+.challenge-prompt {
+  font-size: 1.08rem;
+  color: #334155;
+}
+
+.challenge-prompt p,
+.challenge-prompt ul,
+.challenge-prompt ol {
+  margin: 0.5em 0;
+}
+
+.challenge-prompt > *:first-child {
+  margin-top: 0;
+}
+
+.challenge-prompt > *:last-child {
+  margin-bottom: 0;
+}
+
+.loading {
+  text-align: center;
+  color: #64748b;
+  font-size: 1.1rem;
+}
+
+.solution-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.solution-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  font-size: 1rem;
+  margin-top: 6px;
+  background: #f1f5f9;
+}
+
+.solution-button {
+  padding: 10px 0;
+  border-radius: 8px;
+  border: none;
+  background: #38bdf8;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1.1rem;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: background 0.2s;
+}
+
+.solution-button:hover {
+  background: #0ea5e9;
+}
+
+.feedback-box {
+  margin-top: 22px;
+  background: #e0f2fe;
+  border-radius: 8px;
+  padding: 14px 16px;
+  color: #0369a1;
+  font-size: 1.05rem;
+  box-shadow: 0 1px 6px #0001;
+}

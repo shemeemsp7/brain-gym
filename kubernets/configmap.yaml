@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: brain-gym-config
+  namespace: brain-gym
+data:
+  API_BASE: "http://brain-gym-service:3000/api"
+  NEXT_PUBLIC_API_BASE: "https://brain-gym.example.com"
+  NEXTAUTH_URL: "https://brain-gym.example.com"
+  NODE_ENV: "production"
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "ascendarium"
+  DEBUG: "false"

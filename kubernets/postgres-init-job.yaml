@@ -1,0 +1,95 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-init-schema
+  namespace: brain-gym
+spec:
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command: ['sh', '-c', 'until pg_isready -h postgres-service -p 5432 -U postgres; do echo waiting for postgres; sleep 2; done;']
+      containers:
+      - name: schema-init
+        image: postgres:15-alpine
+        env:
+        - name: PGHOST
+          value: postgres-service
+        - name: PGPORT
+          value: "5432"
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: brain-gym-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: brain-gym-secrets
+              key: POSTGRES_USER
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: brain-gym-secrets
+              key: POSTGRES_PASSWORD
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Creating tables if they don't exist..."
+          psql -U $POSTGRES_USER -d $POSTGRES_DB << 'EOF'
+          
+          -- Users table with updated schema
+          CREATE TABLE IF NOT EXISTS users (
+              id TEXT PRIMARY KEY,
+              name TEXT,
+              email TEXT UNIQUE NOT NULL,
+              password_hash TEXT,
+              role TEXT DEFAULT 'user',
+              provider TEXT, -- 'credentials', 'google', 'github'
+              provider_account_id TEXT,
+              image TEXT,
+              belt VARCHAR(32) DEFAULT 'white'
+          );
+
+          -- Challenges table (stores challenge prompts)
+          CREATE TABLE IF NOT EXISTS challenges (
+              id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+              title TEXT NOT NULL,
+              prompt TEXT NOT NULL,
+              difficulty TEXT NOT NULL,
+              time_limit INTEGER NOT NULL DEFAULT 60,
+              created_at TIMESTAMP DEFAULT NOW()
+          );
+
+          -- User Challenges table (stores user attempts, solution, feedback, evaluation, notes, and remaining_time)
+          CREATE TABLE IF NOT EXISTS user_challenges (
+              id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+              user_id TEXT REFERENCES users(id),
+              challenge_id BIGINT REFERENCES challenges(id),
+              solution TEXT NOT NULL,
+              feedback TEXT,
+              evaluation TEXT, -- e.g. "correct", "partially correct", "incorrect", "brute force", etc.
+              notes TEXT,
+              status TEXT NOT NULL CHECK (status IN ('completed', 'not_completed', 'in_progress')),
+              submitted_at TIMESTAMP DEFAULT NOW(),
+              remaining_time INTEGER,
+              time_taken INTEGER,
+              UNIQUE(user_id, challenge_id)
+          );
+
+          -- Create indexes for better performance
+          CREATE INDEX IF NOT EXISTS idx_user_challenges_user_id ON user_challenges(user_id);
+          CREATE INDEX IF NOT EXISTS idx_user_challenges_challenge_id ON user_challenges(challenge_id);
+          CREATE INDEX IF NOT EXISTS idx_user_challenges_status ON user_challenges(status);
+          CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+          CREATE INDEX IF NOT EXISTS idx_users_provider ON users(provider);
+          CREATE INDEX IF NOT EXISTS idx_challenges_difficulty ON challenges(difficulty);
+
+          EOF
+          echo "Schema initialization completed!"

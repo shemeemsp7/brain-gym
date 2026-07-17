@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: brain-gym-sa
+  namespace: brain-gym
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: brain-gym-role
+  namespace: brain-gym
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: brain-gym-rolebinding
+  namespace: brain-gym
+subjects:
+- kind: ServiceAccount
+  name: brain-gym-sa
+  namespace: brain-gym
+roleRef:
+  kind: Role
+  name: brain-gym-role
+  apiGroup: rbac.authorization.k8s.io
