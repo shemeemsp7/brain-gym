@@ -14,6 +14,7 @@ import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents"; // Trophy icon as belt symbol
+import { fetchUserProfile } from "../src/challenge/apiService";
 
 // Belt color mapping
 const BELT_COLORS = {
@@ -33,6 +34,16 @@ const LEVELS = [
   { label: "Advanced (Expert)", value: "advanced" }
 ];
 
+function formatBeltProgress(beltProgress) {
+  if (!beltProgress || !beltProgress.next) return null;
+  const { missing, next } = beltProgress;
+  const parts = [];
+  if (missing.total > 0) parts.push(`${missing.total} more solved`);
+  if (missing.medium > 0) parts.push(`${missing.medium} medium`);
+  if (missing.advanced > 0) parts.push(`${missing.advanced} advanced`);
+  return parts.length ? `${parts.join(", ")} to ${next} belt` : null;
+}
+
 function App() {
   const { data: session, status } = useSession();
   const user = session?.user || null;
@@ -44,11 +55,29 @@ function App() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [belt, setBelt] = useState(user?.belt || "white");
+  const [profile, setProfile] = useState(null);
 
   // Ensure belt updates when session changes
   React.useEffect(() => {
     setBelt(user?.belt || "white");
   }, [user?.belt]);
+
+  const refreshProfile = React.useCallback(() => {
+    if (!user?.id) return;
+    fetchUserProfile(user.id)
+      .then(data => setProfile(data))
+      .catch(() => {
+        // Non-critical — stats/streak just won't show this time.
+      });
+  }, [user?.id]);
+
+  React.useEffect(() => {
+    if (user?.id) {
+      refreshProfile();
+    } else {
+      setProfile(null);
+    }
+  }, [user?.id, refreshProfile]);
   const [showReview, setShowReview] = useState(false);
   const [beltRulesOpen, setBeltRulesOpen] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -188,9 +217,9 @@ function App() {
   function handleChallengeSaved(newBelt) {
     if (newBelt && newBelt !== belt) {
       setBelt(newBelt);
-      // Also update user object so belt persists on reload
-      setUser(prev => prev ? { ...prev, belt: newBelt } : prev);
     }
+    // Stats/streak/belt-progress may all have changed after a save.
+    refreshProfile();
   }
 
   return (
@@ -209,11 +238,7 @@ function App() {
             <span
               className="banner-belt"
               style={{
-                // Log the belt color for debugging
-                background: (() => {
-                  const color = BELT_COLORS[belt?.toLowerCase()] || "#fff";
-                  return color;
-                })(),
+                background: BELT_COLORS[belt?.toLowerCase()] || "#fff",
                 color: belt?.toLowerCase() === "white" ? "#222" : "#fff",
                 border: "2px solid #e2e8f0",
                 borderRadius: "8px",
@@ -226,7 +251,7 @@ function App() {
                 alignItems: "center",
                 gap: "6px"
               }}
-              title="Click to see belt rules"
+              title={formatBeltProgress(profile?.beltProgress) || "Click to see belt rules"}
               onClick={handleShowBeltRules}
             >
               <EmojiEventsIcon
@@ -238,6 +263,28 @@ function App() {
               />
               {(belt?.charAt(0).toUpperCase() + belt?.slice(1)) || "White"} Belt
             </span>
+            {profile?.streak && (
+              <span
+                className="banner-streak"
+                title={profile.streak.active ? "You've trained today — streak is live" : profile.streak.count > 0 ? "Train today to keep your streak alive" : "Start a streak by completing a challenge"}
+                style={{
+                  marginLeft: "12px",
+                  fontWeight: 600,
+                  fontSize: "0.95rem",
+                  color: profile.streak.count > 0 ? "#ea580c" : "#94a3b8"
+                }}
+              >
+                🔥 {profile.streak.count}-day streak
+              </span>
+            )}
+            {profile?.stats && (
+              <span
+                className="banner-stats"
+                style={{ marginLeft: "12px", fontSize: "0.85rem", color: "#64748b" }}
+              >
+                Easy {profile.stats.easy} · Medium {profile.stats.medium} · Advanced {profile.stats.advanced}
+              </span>
+            )}
           </div>
           <div className="banner-right">
             <Button

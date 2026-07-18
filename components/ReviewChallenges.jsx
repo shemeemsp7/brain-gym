@@ -94,6 +94,14 @@ function ReviewChallenges({ user, onResume, showBeltRules, adminMode = false, se
                     {ch.evaluation.charAt(0).toUpperCase() + ch.evaluation.slice(1)}
                   </Typography>
                 )}
+                {Array.isArray(ch.integrity_flags) && ch.integrity_flags.some(f => f.flag === "paste_confirmed" || f.flag === "ai_suspect_confirmed") && (
+                  <Typography
+                    title="You confirmed this attempt was your own work"
+                    sx={{ marginLeft: 2, color: "#0891b2", fontSize: "0.85rem" }}
+                  >
+                    🤝 confirmed own-work
+                  </Typography>
+                )}
                 <Typography sx={{ marginLeft: 2, color: "#64748b" }}>
                   {formatLocalTime(ch.submitted_at)}
                 </Typography>

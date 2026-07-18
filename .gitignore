@@ -44,3 +44,7 @@ coverage/
 
 # Internal review notes — never commit
 PROJECT_REVIEW.md
+
+#git ignore graphify out
+graphify-out/
+doc/

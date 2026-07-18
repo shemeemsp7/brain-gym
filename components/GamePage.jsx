@@ -8,7 +8,13 @@ import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
+import StarIcon from "@mui/icons-material/Star";
+import StarBorderIcon from "@mui/icons-material/StarBorder";
 import { fetchChallenge, fetchFeedback, fetchClarification, saveUserChallenge } from "../src/challenge/apiService";
+import { INTEGRITY_MESSAGES, pickMessage } from "../src/integrity/messages";
+
+const COPY_TOAST_SESSION_KEY = "bg_copy_toast_shown";
+const PASTE_CONFIRM_THRESHOLD = 80; // chars — smaller pastes (a variable name, a fragment) never nag
 
 // (Full GamePage implementation below)
 function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeChallengeData, onChallengeSaved }) {
@@ -26,6 +32,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
   const [clarifyLoading, setClarifyLoading] = useState(false);
   const [challengeActive, setChallengeActive] = useState(true);
   const [notes, setNotes] = useState("");
+  const [clarityRating, setClarityRating] = useState(null);
   const [saveStatus, setSaveStatus] = useState({ open: false, message: "", severity: "success" });
   const timerRef = useRef();
   const [lastSavedTimer, setLastSavedTimer] = useState(null);
@@ -33,7 +40,40 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
 
   // Next challenge confirmation dialog
   const [nextConfirmOpen, setNextConfirmOpen] = useState(false);
- 
+
+  // "Train Honest" integrity flow (see doc/ANTI_CHEAT_DESIGN.md) — warn, never
+  // block; every flagged action can proceed once the user confirms.
+  const [pasteDialogOpen, setPasteDialogOpen] = useState(false);
+  const [pendingPasteText, setPendingPasteText] = useState("");
+  const [pasteMessage, setPasteMessage] = useState("");
+  const [pasteConfirmedThisAttempt, setPasteConfirmedThisAttempt] = useState(false);
+  const pendingPasteTargetRef = useRef(null);
+  const pendingIntegrityEventsRef = useRef([]);
+
+  const [suspectDialogOpen, setSuspectDialogOpen] = useState(false);
+  const [suspectMessage, setSuspectMessage] = useState("");
+  const [pendingSubmitResult, setPendingSubmitResult] = useState(null);
+
+  const [integrityToast, setIntegrityToast] = useState({ open: false, message: "" });
+
+  function resetIntegrityState() {
+    setPasteConfirmedThisAttempt(false);
+    pendingIntegrityEventsRef.current = [];
+  }
+
+  // Attaches any pending integrity events to a save, and only clears the ones
+  // actually sent — if new events queued mid-flight (or the save fails),
+  // nothing is silently dropped.
+  async function saveWithIntegrity(payload) {
+    const events = pendingIntegrityEventsRef.current;
+    const toSend = events.length ? events : undefined;
+    const result = await saveUserChallenge({ ...payload, integrity_events: toSend });
+    if (toSend) {
+      pendingIntegrityEventsRef.current = pendingIntegrityEventsRef.current.slice(events.length);
+    }
+    return result;
+  }
+
   // Timer pause/resume on tab visibility
   const hiddenTimestampRef = useRef(null);
   useEffect(() => {
@@ -60,6 +100,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
   const didResume = useRef(false);
   useEffect(() => {
     if (didResume.current) return;
+    resetIntegrityState();
     if (resumeChallengeData) {
       setChallenge(resumeChallengeData.prompt);
       setChallengeTitle(resumeChallengeData.title || "");
@@ -67,6 +108,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
       setFeedback(resumeChallengeData.feedback || "");
       setEvaluation(resumeChallengeData.evaluation || "");
       setNotes(resumeChallengeData.notes || "");
+      setClarityRating(resumeChallengeData.clarity_rating || null);
       // Use the original time_limit from the challenge, not just 60
       const limit = resumeChallengeData.time_limit || resumeChallengeData.timeLimit || 60;
       setTimeLimit(limit);
@@ -114,8 +156,10 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     setClarifyAnswer("");
     setChallengeActive(true);
     setNotes("");
+    setClarityRating(null);
     setLastSavedTimer(null);
     setStartTimestamp(Date.now());
+    resetIntegrityState();
     try {
       const { prompt, timeLimit: apiTimeLimit, title } = await fetchChallenge(user, level);
       setChallenge(prompt);
@@ -129,6 +173,32 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     setLoading(false);
   }
 
+  async function completeSubmitSave({ fb, ev, timeTaken }) {
+    try {
+      const saveResult = await saveWithIntegrity({
+        user_id: user.id,
+        prompt: challenge,
+        title: challengeTitle,
+        difficulty: level,
+        solution,
+        feedback: fb,
+        evaluation: ev,
+        status: "completed",
+        notes,
+        time_limit: timeLimit || 60,
+        remaining_time: timer,
+        time_taken: timeTaken
+      });
+      setLastSavedTimer(timer);
+      setSaveStatus({ open: true, message: "Challenge saved!", severity: "success" });
+      if (onChallengeSaved && saveResult.belt) {
+        onChallengeSaved(saveResult.belt);
+      }
+    } catch (err) {
+      setSaveStatus({ open: true, message: "Failed to save challenge. Please check your connection or contact support.", severity: "error" });
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setSubmitted(true);
@@ -136,40 +206,77 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     setLoading(true);
     setFeedback("");
     setEvaluation("");
+    const timeTaken = startTimestamp ? Math.round((Date.now() - startTimestamp) / 1000) : null;
     try {
-      const { feedback: fb, evaluation: ev } = await fetchFeedback(challenge, solution, user);
+      const { feedback: fb, evaluation: ev, integritySuspect, aiLikelihood, cps } = await fetchFeedback(challenge, solution, timeTaken);
       setFeedback(fb);
       setEvaluation(ev);
-      // Save challenge as completed
-      try {
-        const timeTaken = startTimestamp ? Math.round((Date.now() - startTimestamp) / 1000) : null;
-        const saveResult = await saveUserChallenge({
-          user_id: user.id,
-          prompt: challenge,
-          title: challengeTitle,
-          difficulty: level,
-          solution,
-          feedback: fb,
-          evaluation: ev,
-          status: "completed",
-          notes,
-          time_limit: timeLimit || 60,
-          remaining_time: timer,
-          time_taken: timeTaken
-        });
-        setLastSavedTimer(timer);
-        setSaveStatus({ open: true, message: "Challenge saved!", severity: "success" });
-        if (onChallengeSaved && saveResult.belt) {
-          onChallengeSaved(saveResult.belt);
-        }
-      } catch (err) {
-        setSaveStatus({ open: true, message: "Failed to save challenge. Please check your connection or contact support.", severity: "error" });
+      if (integritySuspect) {
+        // Gate the save behind a confirm — we still accept the answer once
+        // the user confirms it's their own work (see doc/ANTI_CHEAT_DESIGN.md).
+        setSuspectMessage(pickMessage(["SPOTTER", "MUSCLE"]));
+        setPendingSubmitResult({ fb, ev, timeTaken, aiLikelihood, cps });
+        setSuspectDialogOpen(true);
+        setLoading(false);
+        return;
       }
+      await completeSubmitSave({ fb, ev, timeTaken });
     } catch {
       setFeedback("Failed to get feedback. Please try again.");
       setSaveStatus({ open: true, message: "Failed to save challenge.", severity: "error" });
     }
     setLoading(false);
+  }
+
+  function handleSuspectKeep() {
+    const result = pendingSubmitResult;
+    pendingIntegrityEventsRef.current.push({
+      flag: "ai_suspect_confirmed",
+      aiLikelihood: result?.aiLikelihood,
+      cps: result?.cps
+    });
+    setSuspectDialogOpen(false);
+    setPendingSubmitResult(null);
+    if (result) completeSubmitSave(result);
+  }
+
+  function handleSuspectDiscard() {
+    const result = pendingSubmitResult;
+    // Recorded as a neutral/positive reporting signal only — never shown to
+    // the user as a warning, never affects scoring (see doc/ANTI_CHEAT_DESIGN.md).
+    pendingIntegrityEventsRef.current.push({
+      flag: "ai_suspect_discarded",
+      aiLikelihood: result?.aiLikelihood,
+      cps: result?.cps
+    });
+    setSuspectDialogOpen(false);
+    setPendingSubmitResult(null);
+    setFeedback("");
+    setEvaluation("");
+    setSolution("");
+    setSubmitted(false);
+    saveWithIntegrity({
+      user_id: user.id,
+      prompt: challenge,
+      title: challengeTitle,
+      difficulty: level,
+      solution: "",
+      feedback: "",
+      evaluation: "",
+      status: "in_progress",
+      notes,
+      time_limit: timeLimit || 60,
+      remaining_time: timer,
+      time_taken: result ? result.timeTaken : null
+    }).then(saveResult => {
+      setLastSavedTimer(timer);
+      if (onChallengeSaved && saveResult.belt) {
+        onChallengeSaved(saveResult.belt);
+      }
+    }).catch(() => {
+      // Non-critical — the box is cleared client-side either way.
+    });
+    setSaveStatus({ open: true, message: "Cleared — give it an honest go.", severity: "info" });
   }
 
   async function handleClarify(e) {
@@ -190,7 +297,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     if (!solution.trim()) return;
     try {
       const timeTaken = startTimestamp ? Math.round((Date.now() - startTimestamp) / 1000) : null;
-      const saveResult = await saveUserChallenge({
+      const saveResult = await saveWithIntegrity({
         user_id: user.id,
         prompt: challenge,
         title: challengeTitle,
@@ -214,6 +321,31 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     }
   }
 
+  async function handleRateClarity(rating) {
+    const previous = clarityRating;
+    setClarityRating(rating); // optimistic
+    try {
+      await saveWithIntegrity({
+        user_id: user.id,
+        prompt: challenge,
+        title: challengeTitle,
+        difficulty: level,
+        solution,
+        feedback,
+        evaluation,
+        status: feedback ? "completed" : "in_progress",
+        notes,
+        time_limit: timeLimit || 60,
+        remaining_time: timer,
+        time_taken: startTimestamp ? Math.round((Date.now() - startTimestamp) / 1000) : null,
+        clarity_rating: rating
+      });
+    } catch {
+      setClarityRating(previous);
+      setSaveStatus({ open: true, message: "Failed to save your rating. Please try again.", severity: "error" });
+    }
+  }
+
   // "Next Challenge" button logic
   function handleNextChallenge() {
     // If in progress (solution typed but not submitted), ask for confirmation
@@ -228,7 +360,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     // Autosave as in_progress before moving on
     try {
       const timeTaken = startTimestamp ? Math.round((Date.now() - startTimestamp) / 1000) : null;
-      await saveUserChallenge({
+      await saveWithIntegrity({
         user_id: user.id,
         prompt: challenge,
         title: challengeTitle,
@@ -259,7 +391,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     if (timer === lastSavedTimer) return;
     const timeout = setTimeout(() => {
       const timeTaken = startTimestamp ? Math.round((Date.now() - startTimestamp) / 1000) : null;
-      saveUserChallenge({
+      saveWithIntegrity({
         user_id: user.id,
         prompt: challenge,
         title: challengeTitle,
@@ -290,7 +422,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     return () => {
       if (solution.trim()) {
         const timeTaken = startTimestamp ? Math.round((Date.now() - startTimestamp) / 1000) : null;
-        saveUserChallenge({
+        saveWithIntegrity({
           user_id: user.id,
           prompt: challenge,
           title: challengeTitle,
@@ -316,6 +448,53 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     // eslint-disable-next-line
   }, [level]);
 
+  // "Train Honest" — paste intercept. Small pastes (< threshold chars) or any
+  // paste after the user already confirmed once this attempt insert freely;
+  // large first-time pastes pause for a confirm, never a hard block.
+  function handleSolutionPaste(e) {
+    const text = e.clipboardData.getData("text");
+    if (!text || text.length < PASTE_CONFIRM_THRESHOLD || pasteConfirmedThisAttempt) {
+      return; // let the native paste happen
+    }
+    e.preventDefault();
+    pendingPasteTargetRef.current = e.target;
+    setPendingPasteText(text);
+    setPasteMessage(pickMessage(["REPS", "LIFT"]));
+    setPasteDialogOpen(true);
+  }
+
+  function handleConfirmPaste() {
+    const target = pendingPasteTargetRef.current;
+    const text = pendingPasteText;
+    if (target && typeof target.selectionStart === "number") {
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      setSolution(prev => prev.slice(0, start) + text + prev.slice(end));
+    } else {
+      setSolution(prev => prev + text);
+    }
+    pendingIntegrityEventsRef.current.push({ flag: "paste_confirmed", chars: text.length });
+    setPasteConfirmedThisAttempt(true);
+    setPasteDialogOpen(false);
+    setPendingPasteText("");
+    pendingPasteTargetRef.current = null;
+  }
+
+  function handleDeclinePaste() {
+    setPasteDialogOpen(false);
+    setPendingPasteText("");
+    pendingPasteTargetRef.current = null;
+  }
+
+  // "Train Honest" — copy-out toast. A wink, not a wall: shown once per
+  // session, never blocks the copy, never flagged.
+  function handleChallengeCopy() {
+    if (typeof window === "undefined" || !window.sessionStorage) return;
+    if (window.sessionStorage.getItem(COPY_TOAST_SESSION_KEY)) return;
+    window.sessionStorage.setItem(COPY_TOAST_SESSION_KEY, "1");
+    setIntegrityToast({ open: true, message: `🏋️ Taking it to another gym? ${INTEGRITY_MESSAGES.MIRROR}` });
+  }
+
   // UI rendering
   return (
     <div className="game-container">
@@ -323,7 +502,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
       <div className="challenge-timer">
         <span>Time Left: {`${Math.floor(timer / 60).toString().padStart(2, "0")}:${(timer % 60).toString().padStart(2, "0")}`}</span>
       </div>
-      <div className="challenge-box">
+      <div className="challenge-box" onCopy={handleChallengeCopy}>
         {loading && !submitted ? (
           <div className="loading">Loading...</div>
         ) : (
@@ -367,9 +546,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
             onChange={e => setSolution(e.target.value)}
             rows={6}
             disabled={loading || submitted}
-            onPaste={e => e.preventDefault()}
-            onCopy={e => e.preventDefault()}
-            onCut={e => e.preventDefault()}
+            onPaste={handleSolutionPaste}
           />
         </label>
         <label>
@@ -409,6 +586,9 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
         >
           Next Challenge
         </Button>
+        <div style={{ marginTop: 10, fontSize: "0.8rem", color: "#94a3b8", fontStyle: "italic" }}>
+          {INTEGRITY_MESSAGES.MIRROR2}
+        </div>
       </form>
       {feedback && (
         <div className="feedback-box">
@@ -422,6 +602,21 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
               </span>
             </div>
           )}
+          <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ marginRight: 6, fontSize: "0.9rem", color: "#64748b" }}>
+              How clear was this challenge?
+            </span>
+            {[1, 2, 3, 4, 5].map(n => (
+              <span
+                key={n}
+                onClick={() => handleRateClarity(n)}
+                style={{ cursor: "pointer", color: "#f59e0b", display: "inline-flex" }}
+                title={`Rate ${n} star${n > 1 ? "s" : ""}`}
+              >
+                {clarityRating && n <= clarityRating ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+              </span>
+            ))}
+          </div>
         </div>
       )}
       {timer === 0 && !feedback && (
@@ -439,6 +634,16 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
           {saveStatus.message}
         </Alert>
       </Snackbar>
+      <Snackbar
+        open={integrityToast.open}
+        autoHideDuration={5000}
+        onClose={() => setIntegrityToast({ ...integrityToast, open: false })}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+      >
+        <Alert onClose={() => setIntegrityToast({ ...integrityToast, open: false })} severity="info" sx={{ width: '100%' }}>
+          {integrityToast.message}
+        </Alert>
+      </Snackbar>
       <Dialog open={nextConfirmOpen} onClose={handleNextCancel}>
         <DialogTitle>Skip This Challenge?</DialogTitle>
         <DialogContent>
@@ -450,6 +655,43 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
           </Button>
           <Button onClick={handleNextConfirm} color="primary" variant="contained">
             Next Challenge
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={pasteDialogOpen} onClose={handleDeclinePaste}>
+        <DialogTitle>🏋️ Hold up — whose reps are these?</DialogTitle>
+        <DialogContent>
+          <p style={{ fontStyle: "italic", marginTop: 0 }}>&quot;{pasteMessage}&quot;</p>
+          <p>
+            Pasting an answer in usually means the thinking happened somewhere else. That&apos;s fine
+            for notes you wrote yourself — but if this came from an AI or a friend, the only person
+            you&apos;re shortchanging is you.
+          </p>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeclinePaste} color="inherit">
+            You&apos;re right — I&apos;ll type it out
+          </Button>
+          <Button onClick={handleConfirmPaste} color="primary" variant="contained">
+            It&apos;s my own work — paste it
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={suspectDialogOpen} onClose={() => {}} disableEscapeKeyDown>
+        <DialogTitle>🏋️ This one&apos;s almost too clean.</DialogTitle>
+        <DialogContent>
+          <p style={{ fontStyle: "italic", marginTop: 0 }}>&quot;{suspectMessage}&quot;</p>
+          <p>
+            This answer looks like it might not be your own reps — maybe it is, fast fingers exist!
+            If it&apos;s genuinely yours, keep it with a clear conscience.
+          </p>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleSuspectDiscard} color="inherit">
+            Discard it — I&apos;ll redo this one honestly
+          </Button>
+          <Button onClick={handleSuspectKeep} color="primary" variant="contained">
+            It&apos;s mine — keep the answer
           </Button>
         </DialogActions>
       </Dialog>

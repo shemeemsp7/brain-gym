@@ -15,17 +15,17 @@ export async function fetchChallenge(_user, level) {
   return await res.json();
 }
 
-export async function fetchFeedback(challenge, solution) {
+export async function fetchFeedback(challenge, solution, timeTaken) {
   const res = await fetch("/api/feedback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ challenge, solution })
+    body: JSON.stringify({ challenge, solution, time_taken: timeTaken })
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Failed to get feedback");
   }
-  return await res.json(); // { feedback, evaluation }
+  return await res.json(); // { feedback, evaluation, integritySuspect }
 }
 
 export async function fetchClarification(challenge, question) {
@@ -53,7 +53,9 @@ export async function saveUserChallenge({
   notes,
   time_limit,
   remaining_time,
-  time_taken
+  time_taken,
+  clarity_rating,
+  integrity_events
 }) {
   const res = await fetch("/api/user-challenge", {
     method: "POST",
@@ -70,7 +72,9 @@ export async function saveUserChallenge({
       notes,
       time_limit,
       remaining_time,
-      time_taken
+      time_taken,
+      clarity_rating,
+      integrity_events
     })
   });
   if (!res.ok) {
@@ -78,6 +82,15 @@ export async function saveUserChallenge({
     throw new Error(data.error || "Failed to save challenge");
   }
   return await res.json();
+}
+
+export async function fetchUserProfile(user_id) {
+  const res = await fetch(`/api/users/${encodeURIComponent(user_id)}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch profile");
+  }
+  return await res.json(); // { user, stats, beltProgress, streak }
 }
 
 export async function fetchUserChallenges(user_id) {

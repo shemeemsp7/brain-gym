@@ -80,8 +80,25 @@ spec:
               submitted_at TIMESTAMP DEFAULT NOW(),
               remaining_time INTEGER,
               time_taken INTEGER,
+              clarity_rating SMALLINT CHECK (clarity_rating BETWEEN 1 AND 5),
+              integrity_flags JSONB NOT NULL DEFAULT '[]',
               UNIQUE(user_id, challenge_id)
           );
+
+          -- Idempotent migrations for databases created before these columns existed.
+          ALTER TABLE user_challenges ADD COLUMN IF NOT EXISTS clarity_rating SMALLINT CHECK (clarity_rating BETWEEN 1 AND 5);
+          ALTER TABLE user_challenges ADD COLUMN IF NOT EXISTS integrity_flags JSONB NOT NULL DEFAULT '[]';
+
+          -- integrity_flags shape (see doc/ANTI_CHEAT_DESIGN.md — "Train Honest"):
+          -- an append-only JSON array of { flag, at, ...extras }, written by
+          -- pages/api/user-challenge.js's sanitizeIntegrityEvents(). Never affects
+          -- scoring/belt; reporting/ledger use only.
+          --   flag = "paste_confirmed"      extras: { chars: number }
+          --   flag = "ai_suspect_confirmed" extras: { aiLikelihood: "low"|"medium"|"high", cps: number }
+          --   flag = "ai_suspect_discarded" extras: { aiLikelihood: "low"|"medium"|"high", cps: number }
+          -- `at` is always server-stamped (never client-supplied) to prevent forging.
+          COMMENT ON COLUMN user_challenges.integrity_flags IS
+            'Append-only "Train Honest" integrity ledger. Array of {flag, at, ...extras}. flag in (paste_confirmed, ai_suspect_confirmed, ai_suspect_discarded). Never affects scoring/belt — reporting only. See doc/ANTI_CHEAT_DESIGN.md.';
 
           -- Create indexes for better performance
           CREATE INDEX IF NOT EXISTS idx_user_challenges_user_id ON user_challenges(user_id);
