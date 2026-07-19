@@ -16,16 +16,30 @@ function render(template, values) {
   return template.replace(/{{(\w+)}}/g, (_, key) => (values[key] ?? ""));
 }
 
-export function getChallengePrompt(user, level) {
-  return render(loadTemplate("challenge.txt"), {
+// Type-aware template lookup (doc/AI_CODE_REVIEW_GYM.md §4.1). Unknown type
+// throws — routes whitelist `type` first, so this is a programmer-error guard.
+const TEMPLATES = {
+  solve:  { challenge: "challenge.txt", feedback: "feedback.txt" },
+  review: { challenge: "review.txt",    feedback: "review-feedback.txt" }
+};
+
+function templatesFor(type) {
+  const templates = TEMPLATES[type];
+  if (!templates) throw new Error(`Unknown challenge type: ${type}`);
+  return templates;
+}
+
+export function getChallengePrompt(user, level, type = "solve", extra = {}) {
+  return render(loadTemplate(templatesFor(type).challenge), {
     userName: user.name,
     userEmail: user.email,
-    level
+    level,
+    ...extra
   });
 }
 
-export function getFeedbackPrompt(challenge, solution, user) {
-  return render(loadTemplate("feedback.txt"), {
+export function getFeedbackPrompt(challenge, solution, user, type = "solve") {
+  return render(loadTemplate(templatesFor(type).feedback), {
     challenge,
     solution,
     userName: user.name

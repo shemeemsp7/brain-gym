@@ -10,6 +10,8 @@ import AccordionDetails from "@mui/material/AccordionDetails";
 import Typography from "@mui/material/Typography";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import Button from "@mui/material/Button";
+import StarIcon from "@mui/icons-material/Star";
+import StarBorderIcon from "@mui/icons-material/StarBorder";
 
 function ReviewChallenges({ user, onResume, showBeltRules, adminMode = false, selectedChallenges = [], onSelectChallenge, onSelectAll }) {
   const [challenges, setChallenges] = useState([]);
@@ -86,6 +88,11 @@ function ReviewChallenges({ user, onResume, showBeltRules, adminMode = false, se
                 <Typography sx={{ marginLeft: 2, color: "#0ea5e9" }}>
                   {ch.difficulty.toUpperCase()}
                 </Typography>
+                {ch.type === "review" && (
+                  <Typography sx={{ marginLeft: 1, color: "#7c3aed", fontSize: "0.85rem", fontWeight: 600 }}>
+                    🐛 Review
+                  </Typography>
+                )}
                 <Typography sx={{ marginLeft: 2, color: ch.status === "completed" ? "#22c55e" : "#f59e42" }}>
                   {ch.status === "completed" ? "Completed" : ch.status === "in_progress" ? "In Progress" : "Not Completed"}
                 </Typography>
@@ -113,7 +120,7 @@ function ReviewChallenges({ user, onResume, showBeltRules, adminMode = false, se
                 </div>
                 <div style={{ marginBottom: 8 }}>
                   <strong>Your Solution:</strong>
-                  <pre style={{ background: "#e0e7ef", padding: 10, borderRadius: 6 }}>{ch.solution}</pre>
+                  <pre style={{ background: "#e0e7ef", padding: 10, borderRadius: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{ch.solution}</pre>
                 </div>
                 <div style={{ marginBottom: 8 }}>
                   <strong>Feedback:</strong>
@@ -121,8 +128,18 @@ function ReviewChallenges({ user, onResume, showBeltRules, adminMode = false, se
                 </div>
                 <div style={{ marginBottom: 8 }}>
                   <strong>Your Notes:</strong>
-                  <pre style={{ background: "#f1f5f9", padding: 8, borderRadius: 6 }}>{ch.notes || "No notes."}</pre>
+                  <pre style={{ background: "#f1f5f9", padding: 8, borderRadius: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{ch.notes || "No notes."}</pre>
                 </div>
+                {ch.clarity_rating && (
+                  <div style={{ marginBottom: 8, display: "flex", alignItems: "center" }}>
+                    <strong style={{ marginRight: 8 }}>Clarity rating:</strong>
+                    {[1, 2, 3, 4, 5].map(n => (
+                      n <= ch.clarity_rating
+                        ? <StarIcon key={n} fontSize="small" sx={{ color: "#f59e0b" }} />
+                        : <StarBorderIcon key={n} fontSize="small" sx={{ color: "#94a3b8" }} />
+                    ))}
+                  </div>
+                )}
                 {ch.status === "in_progress" && (
                   <button
                     style={{

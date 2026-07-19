@@ -8,6 +8,7 @@ const VALID_STATUSES = ["completed", "not_completed", "in_progress"];
 // system flags N/week and users self-correct M% of the time") — it never
 // affects scoring/belt and is never shown to the user as a warning.
 const ALLOWED_INTEGRITY_FLAGS = ["paste_confirmed", "ai_suspect_confirmed", "ai_suspect_discarded"];
+const TYPES = ["solve", "review"];
 const AI_LIKELIHOOD_VALUES = ["low", "medium", "high"];
 const MAX_INTEGRITY_EVENTS_PER_SAVE = 5;
 
@@ -54,7 +55,8 @@ async function determineAndUpdateBelt(user_id) {
 export default withAuth(async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  let { user_id, prompt, title, difficulty, solution, feedback, evaluation, status, notes, time_limit, remaining_time, time_taken, clarity_rating, integrity_events } = req.body || {};
+  let { user_id, prompt, title, difficulty, solution, feedback, evaluation, status, notes, time_limit, remaining_time, time_taken, clarity_rating, integrity_events, type } = req.body || {};
+  const challengeType = TYPES.includes(type) ? type : "solve";
 
   // solution may legitimately be an empty string (e.g. a discarded attempt
   // being cleared for an honest redo) — require the field, not truthiness.
@@ -82,16 +84,18 @@ export default withAuth(async function handler(req, res) {
   const integrityEvents = sanitizeIntegrityEvents(integrity_events);
 
   try {
-    // 1. Insert or get challenge (now with title and time_limit)
+    // 1. Insert or get challenge (now with title, time_limit, and type). Dedup
+    // matches on type too, so a "review" round with the same prompt text as a
+    // "solve" round (unlikely, but possible after a mode switch) never collide.
     let challengeResult = await query(
-      "SELECT id FROM challenges WHERE prompt = $1 AND difficulty = $2",
-      [prompt, difficulty]
+      "SELECT id FROM challenges WHERE prompt = $1 AND difficulty = $2 AND type = $3",
+      [prompt, difficulty, challengeType]
     );
     let challenge_id;
     if (challengeResult.rows.length === 0) {
       const insertChallenge = await query(
-        "INSERT INTO challenges (title, prompt, difficulty, time_limit) VALUES ($1, $2, $3, $4) RETURNING id",
-        [title, prompt, difficulty, time_limit || 60]
+        "INSERT INTO challenges (title, prompt, difficulty, time_limit, type) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        [title, prompt, difficulty, time_limit || 60, challengeType]
       );
       challenge_id = insertChallenge.rows[0].id;
     } else {

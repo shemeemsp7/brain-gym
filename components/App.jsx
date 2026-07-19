@@ -9,6 +9,7 @@ import BeltRulesModal from "./BeltRulesModal";
 import LeaderboardPage from "./LeaderboardPage";
 import AdminPage from "./AdminPage";
 import Button from "@mui/material/Button";
+import Tooltip from "@mui/material/Tooltip";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
@@ -53,6 +54,9 @@ function App() {
   const [challengeActive, setChallengeActive] = useState(false);
   const [pendingLevel, setPendingLevel] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [challengeType, setChallengeType] = useState("");
+  const [modeSelected, setModeSelected] = useState(false);
+  const [pendingType, setPendingType] = useState("solve");
   const [showRegister, setShowRegister] = useState(false);
   const [belt, setBelt] = useState(user?.belt || "white");
   const [profile, setProfile] = useState(null);
@@ -93,12 +97,25 @@ function App() {
     // Always show confirmation if a challenge is loaded and active
     if (challengeLoaded && challengeActive) {
       setPendingLevel(lvl);
+      setPendingType(challengeType);
       setConfirmOpen(true);
     } else {
       setLevel(lvl);
       setLevelSelected(true);
       setCanChangeLevel(false);
       setResumeChallengeData(null);
+    }
+  }
+
+  function handleTypeSelect(t) {
+    // Same confirm-before-switching flow as changing difficulty (doc/AI_CODE_REVIEW_GYM.md §5.1).
+    if (challengeLoaded && challengeActive) {
+      setPendingLevel(level);
+      setPendingType(t);
+      setConfirmOpen(true);
+    } else {
+      setChallengeType(t);
+      setModeSelected(true);
     }
   }
 
@@ -113,6 +130,8 @@ function App() {
     setShowReview(false);
     setResumeChallengeData(null);
     setShowLeaderboard(false);
+    setChallengeType("");
+    setModeSelected(false);
   }
 
   function handleChangeLevel() {
@@ -121,6 +140,8 @@ function App() {
     setChallengeActive(false);
     setChallengeLoaded(false);
     setResumeChallengeData(null);
+    setChallengeType("");
+    setModeSelected(false);
   }
 
   function enableChangeLevel() {
@@ -137,6 +158,8 @@ function App() {
 
   function handleConfirmChangeLevel() {
     setLevel(pendingLevel);
+    setChallengeType(pendingType || "solve");
+    setModeSelected(true);
     setLevelSelected(true);
     setCanChangeLevel(false);
     setChallengeActive(false);
@@ -147,6 +170,7 @@ function App() {
 
   function handleCancelChangeLevel() {
     setPendingLevel("");
+    setPendingType("solve");
     setConfirmOpen(false);
   }
 
@@ -188,6 +212,8 @@ function App() {
     setShowReview(false);
     setShowLeaderboard(false);
     setLevel(challenge.difficulty);
+    setChallengeType(challenge.type || "solve");
+    setModeSelected(true);
     setLevelSelected(true);
     setCanChangeLevel(false);
     setResumeChallengeData(challenge);
@@ -203,6 +229,8 @@ function App() {
     setChallengeActive(false);
     setChallengeLoaded(false);
     setResumeChallengeData(null);
+    setChallengeType("");
+    setModeSelected(false);
   }
 
   function handleShowBeltRules() {
@@ -382,10 +410,36 @@ function App() {
             )}
           </div>
           {levelSelected && (
+            <div className="level-select-container" style={{ marginTop: 8 }}>
+              <span className="level-select-label">Mode:</span>
+              <Tooltip title="Write it yourself">
+                <Button
+                  variant={challengeType === "solve" ? "contained" : "outlined"}
+                  color={challengeType === "solve" ? "primary" : "inherit"}
+                  onClick={() => handleTypeSelect("solve")}
+                  sx={{ marginRight: "8px" }}
+                >
+                  💪 Lift
+                </Button>
+              </Tooltip>
+              <Tooltip title="Spot the AI's mistakes">
+                <Button
+                  variant={challengeType === "review" ? "contained" : "outlined"}
+                  color={challengeType === "review" ? "primary" : "inherit"}
+                  onClick={() => handleTypeSelect("review")}
+                  sx={{ marginRight: "8px" }}
+                >
+                  🐛 Spot
+                </Button>
+              </Tooltip>
+            </div>
+          )}
+          {levelSelected && modeSelected && (
             <GamePage
-              key={level}
+              key={level + ":" + challengeType}
               user={user}
               level={level}
+              type={challengeType}
               onChallengeComplete={enableChangeLevel}
               onChallengeActive={handleChallengeActive}
               resumeChallengeData={resumeChallengeData}
@@ -393,9 +447,9 @@ function App() {
             />
           )}
           <Dialog open={confirmOpen} onClose={handleCancelChangeLevel}>
-            <DialogTitle>Change Difficulty Level?</DialogTitle>
+            <DialogTitle>Change Level or Mode?</DialogTitle>
             <DialogContent>
-              A challenge is currently active. Do you want to exit and change the difficulty level?
+              A challenge is currently active. Do you want to exit and change the difficulty level or mode?
             </DialogContent>
             <DialogActions>
               <Button onClick={handleCancelChangeLevel} color="inherit">

@@ -64,6 +64,7 @@ spec:
               prompt TEXT NOT NULL,
               difficulty TEXT NOT NULL,
               time_limit INTEGER NOT NULL DEFAULT 60,
+              type TEXT NOT NULL DEFAULT 'solve',
               created_at TIMESTAMP DEFAULT NOW()
           );
 
@@ -88,6 +89,13 @@ spec:
           -- Idempotent migrations for databases created before these columns existed.
           ALTER TABLE user_challenges ADD COLUMN IF NOT EXISTS clarity_rating SMALLINT CHECK (clarity_rating BETWEEN 1 AND 5);
           ALTER TABLE user_challenges ADD COLUMN IF NOT EXISTS integrity_flags JSONB NOT NULL DEFAULT '[]';
+          ALTER TABLE challenges ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'solve';
+
+          -- challenges.type (see doc/AI_CODE_REVIEW_GYM.md): the challenge mode. Values
+          -- are validated at the API layer (pages/api/challenge.js, user-challenge.js),
+          -- not by a CHECK constraint, so new modes don't need a migration to unlock.
+          COMMENT ON COLUMN challenges.type IS
+            'Challenge mode: "solve" (default, free-form answer) | "review" (AI Code Review Gym — user reviews a candidate solution). See doc/AI_CODE_REVIEW_GYM.md.';
 
           -- integrity_flags shape (see doc/ANTI_CHEAT_DESIGN.md — "Train Honest"):
           -- an append-only JSON array of { flag, at, ...extras }, written by

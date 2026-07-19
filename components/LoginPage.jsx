@@ -3,6 +3,7 @@ import React, { useState } from "react";
 
 function LoginPage() {
   const [error, setError] = useState("");
+  const [showGithubWip, setShowGithubWip] = useState(false);
 
   return (
     <div style={{
@@ -181,10 +182,7 @@ function LoginPage() {
               cursor: "pointer",
               transition: "background 0.2s"
             }}
-            onClick={async () => {
-              const { signIn } = await import("next-auth/react");
-              signIn("github");
-            }}
+            onClick={() => setShowGithubWip(true)}
           >
             <img
               src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/github/github-original.svg"
@@ -195,6 +193,54 @@ function LoginPage() {
           </button>
         </div>
       </div>
+      {showGithubWip && (
+        <div
+          onClick={() => setShowGithubWip(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: "32px 28px",
+              maxWidth: 380,
+              textAlign: "center",
+              boxShadow: "0 12px 48px #0f172a44"
+            }}
+          >
+            <div style={{ fontSize: "2.4rem", marginBottom: 8 }}>🚧🏋️</div>
+            <h3 style={{ margin: "0 0 12px", color: "#1e293b" }}>Leg day for our engineers</h3>
+            <p style={{ color: "#334155", lineHeight: 1.6, margin: "0 0 20px" }}>
+              GitHub sign-in is still stuck under the barbell — we haven&apos;t wired it up yet.
+              Give it some time to bulk up, and use Google in the meantime!
+            </p>
+            <button
+              onClick={() => setShowGithubWip(false)}
+              style={{
+                background: "#2563eb",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                padding: "10px 24px",
+                fontWeight: 600,
+                fontSize: "1rem",
+                cursor: "pointer"
+              }}
+            >
+              Got it, I&apos;ll use Google 💪
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

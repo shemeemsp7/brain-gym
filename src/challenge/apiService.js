@@ -2,11 +2,11 @@
 // Frontend API service: calls backend API endpoints.
 // The server identifies the user from the session — no user object is sent.
 
-export async function fetchChallenge(_user, level) {
+export async function fetchChallenge(_user, level, type = "solve") {
   const res = await fetch("/api/challenge", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ level })
+    body: JSON.stringify({ level, type })
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -15,17 +15,17 @@ export async function fetchChallenge(_user, level) {
   return await res.json();
 }
 
-export async function fetchFeedback(challenge, solution, timeTaken) {
+export async function fetchFeedback(challenge, solution, timeTaken, type = "solve") {
   const res = await fetch("/api/feedback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ challenge, solution, time_taken: timeTaken })
+    body: JSON.stringify({ challenge, solution, time_taken: timeTaken, type })
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Failed to get feedback");
   }
-  return await res.json(); // { feedback, evaluation, integritySuspect }
+  return await res.json(); // { feedback, evaluation, integritySuspect } or (review) { feedback, evaluation, bugsPresent, bugsFound, falseFindings }
 }
 
 export async function fetchClarification(challenge, question) {
@@ -55,7 +55,8 @@ export async function saveUserChallenge({
   remaining_time,
   time_taken,
   clarity_rating,
-  integrity_events
+  integrity_events,
+  type
 }) {
   const res = await fetch("/api/user-challenge", {
     method: "POST",
@@ -74,7 +75,8 @@ export async function saveUserChallenge({
       remaining_time,
       time_taken,
       clarity_rating,
-      integrity_events
+      integrity_events,
+      type
     })
   });
   if (!res.ok) {

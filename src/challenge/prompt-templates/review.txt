@@ -1,0 +1,32 @@
+You are generating a code-review training exercise for a programming logic gym.
+
+Difficulty level: {{level}}.
+
+Generate:
+1. A short, clear problem statement (a function or small program spec).
+2. A candidate solution in language-neutral pseudocode (or simple Python-like
+   pseudocode), 10-30 lines, presented as if written by an AI assistant.
+
+Decide the round type yourself, weighted randomly:
+- ~70%: plant exactly {{bugCount}} subtle LOGICAL bug(s) - off-by-one, wrong
+  boundary condition, missed edge case (empty input, single element, negatives,
+  duplicates), inverted comparison, wrong accumulator initialization, broken
+  loop invariant, incorrect early return, or a comment claiming a better
+  complexity than the code actually achieves. The bug must be findable by
+  careful reading - never a syntax error, never a typo, never something a
+  linter catches.
+- ~30%: make the solution fully correct. It should still LOOK reviewable -
+  include at least one part that superficially seems suspicious but is right.
+
+The code must look plausible and well-formatted either way. Do NOT hint at the
+round type anywhere in the visible text.
+
+Return a JSON object with exactly these fields:
+- "title": short crisp title (max 7 words, no punctuation)
+- "prompt": markdown containing (a) the problem statement under a heading
+  "## The task", then (b) the candidate solution in a fenced code block under
+  a heading "## The AI's solution". Nothing else.
+- "timeLimit": recommended seconds for the review (240-600 by difficulty)
+
+Respond with ONLY the JSON object, no extra commentary. Do not include any
+field describing whether bugs exist or where they are.

@@ -7,32 +7,48 @@ import { withRateLimit } from "../../src/rateLimit";
 const AI_LIKELIHOOD_VALUES = ["low", "medium", "high"];
 // ~72 wpm sustained including thinking time — conservative, to keep false positives rare.
 const SPEED_FLAG_CHARS_PER_SECOND = 6;
+const TYPES = ["solve", "review"];
+const REVIEW_STAT_FIELDS = ["bugsPresent", "bugsFound", "falseFindings"];
 
 async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { challenge, solution, time_taken } = req.body || {};
+  const { challenge, solution, time_taken, type } = req.body || {};
   if (typeof challenge !== "string" || !challenge || typeof solution !== "string" || !solution) {
     return res.status(400).json({ error: "Missing challenge or solution" });
   }
+  const challengeType = TYPES.includes(type) ? type : "solve";
 
-  const prompt = getFeedbackPrompt(challenge, solution, req.user);
+  const prompt = getFeedbackPrompt(challenge, solution, req.user, challengeType);
 
   try {
     const content = await chatCompletion(prompt);
     let feedback = "";
     let evaluation = "";
     let aiLikelihood = null;
+    let reviewStats = {};
     try {
       const parsed = JSON.parse(content || "{}");
       feedback = parsed.feedback || "";
       evaluation = parsed.evaluation || "";
-      if (AI_LIKELIHOOD_VALUES.includes(parsed.aiLikelihood)) {
+      if (challengeType === "solve" && AI_LIKELIHOOD_VALUES.includes(parsed.aiLikelihood)) {
         aiLikelihood = parsed.aiLikelihood;
+      }
+      if (challengeType === "review") {
+        for (const field of REVIEW_STAT_FIELDS) {
+          if (Number.isInteger(parsed[field])) reviewStats[field] = parsed[field];
+        }
       }
     } catch {
       feedback = content || "Failed to get feedback. Please try again.";
       evaluation = "";
+    }
+
+    // The review grader's JSON schema has no aiLikelihood field (it grades a
+    // structured verdict + findings, not free-form prose) — integrity
+    // suspicion for review mode is out of scope for v1 (doc/AI_CODE_REVIEW_GYM.md §3.2).
+    if (challengeType === "review") {
+      return res.status(200).json({ feedback, evaluation, ...reviewStats });
     }
 
     // Behavioral cross-check the model itself can't see: implausible typing speed.

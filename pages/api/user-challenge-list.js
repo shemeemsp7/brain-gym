@@ -17,7 +17,7 @@ export default withAuth(async function handler(req, res) {
     try {
       const result = await query(
         `SELECT uc.id, uc.solution, uc.feedback, uc.evaluation, uc.status, uc.notes, uc.submitted_at,
-                uc.remaining_time, uc.clarity_rating, uc.integrity_flags, c.prompt, c.difficulty, c.title, c.time_limit
+                uc.remaining_time, uc.clarity_rating, uc.integrity_flags, c.prompt, c.difficulty, c.title, c.time_limit, c.type
            FROM user_challenges uc
            JOIN challenges c ON uc.challenge_id = c.id
           WHERE uc.user_id = $1

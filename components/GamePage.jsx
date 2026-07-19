@@ -12,12 +12,14 @@ import StarIcon from "@mui/icons-material/Star";
 import StarBorderIcon from "@mui/icons-material/StarBorder";
 import { fetchChallenge, fetchFeedback, fetchClarification, saveUserChallenge } from "../src/challenge/apiService";
 import { INTEGRITY_MESSAGES, pickMessage } from "../src/integrity/messages";
+import { emptyFinding, composeReviewSolution, parseReviewSolution, isReviewComposerValid } from "../src/challenge/reviewFormat";
 
 const COPY_TOAST_SESSION_KEY = "bg_copy_toast_shown";
 const PASTE_CONFIRM_THRESHOLD = 80; // chars — smaller pastes (a variable name, a fragment) never nag
 
 // (Full GamePage implementation below)
-function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeChallengeData, onChallengeSaved }) {
+function GamePage({ user, level, type = "solve", onChallengeComplete, onChallengeActive, resumeChallengeData, onChallengeSaved }) {
+  const isReview = type === "review";
   const [challenge, setChallenge] = useState("");
   const [challengeTitle, setChallengeTitle] = useState("");
   const [solution, setSolution] = useState("");
@@ -34,6 +36,14 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
   const [notes, setNotes] = useState("");
   const [clarityRating, setClarityRating] = useState(null);
   const [saveStatus, setSaveStatus] = useState({ open: false, message: "", severity: "success" });
+
+  // AI Code Review Gym composer state (doc/AI_CODE_REVIEW_GYM.md §5.2) — only
+  // used when isReview; serialized into `solution` via the effect below so
+  // every existing save path (autosave, manual save, submit) works unchanged.
+  const [reviewVerdict, setReviewVerdict] = useState(null);
+  const [reviewFindings, setReviewFindings] = useState([emptyFinding()]);
+  const [reviewJustification, setReviewJustification] = useState("");
+  const [reviewStats, setReviewStats] = useState(null);
   const timerRef = useRef();
   const [lastSavedTimer, setLastSavedTimer] = useState(null);
   const [startTimestamp, setStartTimestamp] = useState(null);
@@ -48,6 +58,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
   const [pasteMessage, setPasteMessage] = useState("");
   const [pasteConfirmedThisAttempt, setPasteConfirmedThisAttempt] = useState(false);
   const pendingPasteTargetRef = useRef(null);
+  const pendingPasteInsertRef = useRef(null);
   const pendingIntegrityEventsRef = useRef([]);
 
   const [suspectDialogOpen, setSuspectDialogOpen] = useState(false);
@@ -67,7 +78,7 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
   async function saveWithIntegrity(payload) {
     const events = pendingIntegrityEventsRef.current;
     const toSend = events.length ? events : undefined;
-    const result = await saveUserChallenge({ ...payload, integrity_events: toSend });
+    const result = await saveUserChallenge({ ...payload, type, integrity_events: toSend });
     if (toSend) {
       pendingIntegrityEventsRef.current = pendingIntegrityEventsRef.current.slice(events.length);
     }
@@ -109,6 +120,12 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
       setEvaluation(resumeChallengeData.evaluation || "");
       setNotes(resumeChallengeData.notes || "");
       setClarityRating(resumeChallengeData.clarity_rating || null);
+      if (isReview) {
+        const parsed = parseReviewSolution(resumeChallengeData.solution || "");
+        setReviewVerdict(parsed.verdict);
+        setReviewFindings(parsed.findings);
+        setReviewJustification(parsed.approveJustification);
+      }
       // Use the original time_limit from the challenge, not just 60
       const limit = resumeChallengeData.time_limit || resumeChallengeData.timeLimit || 60;
       setTimeLimit(limit);
@@ -129,6 +146,18 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     }
     // eslint-disable-next-line
   }, []);
+
+  // Keep `solution` in sync with the composer so every existing save path
+  // (autosave, manual save, submit, next-challenge) works unchanged for review mode.
+  useEffect(() => {
+    if (!isReview) return;
+    setSolution(composeReviewSolution({
+      verdict: reviewVerdict,
+      findings: reviewFindings,
+      approveJustification: reviewJustification
+    }));
+    // eslint-disable-next-line
+  }, [isReview, reviewVerdict, reviewFindings, reviewJustification]);
 
   useEffect(() => {
     if (timer > 0 && !submitted && challenge) {
@@ -159,9 +188,13 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     setClarityRating(null);
     setLastSavedTimer(null);
     setStartTimestamp(Date.now());
+    setReviewVerdict(null);
+    setReviewFindings([emptyFinding()]);
+    setReviewJustification("");
+    setReviewStats(null);
     resetIntegrityState();
     try {
-      const { prompt, timeLimit: apiTimeLimit, title } = await fetchChallenge(user, level);
+      const { prompt, timeLimit: apiTimeLimit, title } = await fetchChallenge(user, level, type);
       setChallenge(prompt);
       setChallengeTitle(title || "");
       setTimeLimit(apiTimeLimit);
@@ -208,9 +241,16 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
     setEvaluation("");
     const timeTaken = startTimestamp ? Math.round((Date.now() - startTimestamp) / 1000) : null;
     try {
-      const { feedback: fb, evaluation: ev, integritySuspect, aiLikelihood, cps } = await fetchFeedback(challenge, solution, timeTaken);
+      const {
+        feedback: fb, evaluation: ev, integritySuspect, aiLikelihood, cps,
+        bugsPresent, bugsFound, falseFindings
+      } = await fetchFeedback(challenge, solution, timeTaken, type);
       setFeedback(fb);
       setEvaluation(ev);
+      if (isReview) {
+        const hasStats = [bugsPresent, bugsFound, falseFindings].some(v => typeof v === "number");
+        setReviewStats(hasStats ? { bugsPresent, bugsFound, falseFindings } : null);
+      }
       if (integritySuspect) {
         // Gate the save behind a confirm — we still accept the answer once
         // the user confirms it's their own work (see doc/ANTI_CHEAT_DESIGN.md).
@@ -450,40 +490,63 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
 
   // "Train Honest" — paste intercept. Small pastes (< threshold chars) or any
   // paste after the user already confirmed once this attempt insert freely;
-  // large first-time pastes pause for a confirm, never a hard block.
-  function handleSolutionPaste(e) {
-    const text = e.clipboardData.getData("text");
-    if (!text || text.length < PASTE_CONFIRM_THRESHOLD || pasteConfirmedThisAttempt) {
-      return; // let the native paste happen
-    }
-    e.preventDefault();
-    pendingPasteTargetRef.current = e.target;
-    setPendingPasteText(text);
-    setPasteMessage(pickMessage(["REPS", "LIFT"]));
-    setPasteDialogOpen(true);
+  // large first-time pastes pause for a confirm, never a hard block. Generalized
+  // (via getValue/setValueViaUpdater) so it covers both the plain solve textarea
+  // and every review-composer field (doc/AI_CODE_REVIEW_GYM.md §6).
+  function createPasteHandler(getValue, setValueViaUpdater) {
+    return function onFieldPaste(e) {
+      const text = e.clipboardData.getData("text");
+      if (!text || text.length < PASTE_CONFIRM_THRESHOLD || pasteConfirmedThisAttempt) {
+        return; // let the native paste happen
+      }
+      e.preventDefault();
+      const target = e.target;
+      pendingPasteTargetRef.current = target;
+      pendingPasteInsertRef.current = insertedText => {
+        const start = typeof target.selectionStart === "number" ? target.selectionStart : getValue().length;
+        const end = typeof target.selectionEnd === "number" ? target.selectionEnd : getValue().length;
+        setValueViaUpdater(prev => prev.slice(0, start) + insertedText + prev.slice(end));
+      };
+      setPendingPasteText(text);
+      setPasteMessage(pickMessage(["REPS", "LIFT"]));
+      setPasteDialogOpen(true);
+    };
   }
 
   function handleConfirmPaste() {
-    const target = pendingPasteTargetRef.current;
     const text = pendingPasteText;
-    if (target && typeof target.selectionStart === "number") {
-      const start = target.selectionStart;
-      const end = target.selectionEnd;
-      setSolution(prev => prev.slice(0, start) + text + prev.slice(end));
-    } else {
-      setSolution(prev => prev + text);
+    if (pendingPasteInsertRef.current) {
+      pendingPasteInsertRef.current(text);
     }
     pendingIntegrityEventsRef.current.push({ flag: "paste_confirmed", chars: text.length });
     setPasteConfirmedThisAttempt(true);
     setPasteDialogOpen(false);
     setPendingPasteText("");
     pendingPasteTargetRef.current = null;
+    pendingPasteInsertRef.current = null;
   }
 
   function handleDeclinePaste() {
     setPasteDialogOpen(false);
     setPendingPasteText("");
     pendingPasteTargetRef.current = null;
+    pendingPasteInsertRef.current = null;
+  }
+
+  function updateFinding(i, field, value) {
+    setReviewFindings(prev => prev.map((f, idx) => (idx === i ? { ...f, [field]: value } : f)));
+  }
+
+  function updateFindingViaUpdater(i, field, updaterFn) {
+    setReviewFindings(prev => prev.map((f, idx) => (idx === i ? { ...f, [field]: updaterFn(f[field]) } : f)));
+  }
+
+  function addFinding() {
+    setReviewFindings(prev => [...prev, emptyFinding()]);
+  }
+
+  function removeFinding(i) {
+    setReviewFindings(prev => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev));
   }
 
   // "Train Honest" — copy-out toast. A wink, not a wall: shown once per
@@ -502,6 +565,11 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
       <div className="challenge-timer">
         <span>Time Left: {`${Math.floor(timer / 60).toString().padStart(2, "0")}:${(timer % 60).toString().padStart(2, "0")}`}</span>
       </div>
+      {isReview && (
+        <div style={{ marginBottom: 8, fontWeight: 600, color: "#7c3aed" }}>
+          🤖 An AI assistant wrote this solution. Review it before it ships.
+        </div>
+      )}
       <div className="challenge-box" onCopy={handleChallengeCopy}>
         {loading && !submitted ? (
           <div className="loading">Loading...</div>
@@ -538,6 +606,105 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
         </div>
       )}
       <form className="solution-form" onSubmit={handleSubmit}>
+        {isReview ? (
+          <div className="review-composer" style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 12 }}>
+              <strong>Your verdict</strong>
+              <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
+                <Button
+                  variant={reviewVerdict === "approve" ? "contained" : "outlined"}
+                  color="success"
+                  onClick={() => setReviewVerdict("approve")}
+                  disabled={loading || submitted}
+                >
+                  ✅ Approve
+                </Button>
+                <Button
+                  variant={reviewVerdict === "request-changes" ? "contained" : "outlined"}
+                  color="error"
+                  onClick={() => setReviewVerdict("request-changes")}
+                  disabled={loading || submitted}
+                >
+                  🐛 Request changes
+                </Button>
+              </div>
+            </div>
+            {reviewVerdict === "approve" && (
+              <label>
+                Why are you confident this is correct? Reference the logic you verified.
+                <textarea
+                  className="solution-input"
+                  value={reviewJustification}
+                  onChange={e => setReviewJustification(e.target.value)}
+                  onPaste={createPasteHandler(() => reviewJustification, setReviewJustification)}
+                  rows={4}
+                  disabled={loading || submitted}
+                />
+                <div style={{
+                  fontSize: "0.8rem",
+                  marginTop: 2,
+                  color: reviewJustification.trim().length >= 80 ? "#16a34a" : "#94a3b8"
+                }}>
+                  {reviewJustification.trim().length}/80 characters minimum
+                  {reviewJustification.trim().length >= 80 ? " ✓" : " — keep going, lazy rubber-stamps don't count"}
+                </div>
+              </label>
+            )}
+            {reviewVerdict === "request-changes" && (
+              <div>
+                <div style={{ fontSize: "0.8rem", marginBottom: 8, color: "#94a3b8" }}>
+                  Fill in Where, Why, and a triggering Input for at least one finding to submit.
+                </div>
+                {reviewFindings.map((f, i) => (
+                  <div key={i} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, marginBottom: 10 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Finding {i + 1}</div>
+                    <label>
+                      Where (line / section)
+                      <input
+                        type="text"
+                        className="solution-input"
+                        value={f.where}
+                        onChange={e => updateFinding(i, "where", e.target.value)}
+                        onPaste={createPasteHandler(() => reviewFindings[i].where, updater => updateFindingViaUpdater(i, "where", updater))}
+                        disabled={loading || submitted}
+                      />
+                    </label>
+                    <label>
+                      Why it&apos;s wrong
+                      <textarea
+                        className="solution-input"
+                        value={f.why}
+                        onChange={e => updateFinding(i, "why", e.target.value)}
+                        onPaste={createPasteHandler(() => reviewFindings[i].why, updater => updateFindingViaUpdater(i, "why", updater))}
+                        rows={2}
+                        disabled={loading || submitted}
+                      />
+                    </label>
+                    <label>
+                      Input that exposes it
+                      <input
+                        type="text"
+                        className="solution-input"
+                        value={f.trigger}
+                        onChange={e => updateFinding(i, "trigger", e.target.value)}
+                        onPaste={createPasteHandler(() => reviewFindings[i].trigger, updater => updateFindingViaUpdater(i, "trigger", updater))}
+                        disabled={loading || submitted}
+                      />
+                    </label>
+                    {reviewFindings.length > 1 && (
+                      <Button size="small" color="inherit" onClick={() => removeFinding(i)} disabled={loading || submitted}>
+                        Remove finding
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button variant="outlined" size="small" onClick={addFinding} disabled={loading || submitted}>
+                  + Add finding
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
         <label>
           Your Solution (pseudocode or algorithm steps)
           <textarea
@@ -546,9 +713,10 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
             onChange={e => setSolution(e.target.value)}
             rows={6}
             disabled={loading || submitted}
-            onPaste={handleSolutionPaste}
+            onPaste={createPasteHandler(() => solution, setSolution)}
           />
         </label>
+        )}
         <label>
           Your Notes (optional)
           <textarea
@@ -564,7 +732,12 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
           variant="contained"
           color="primary"
           type="submit"
-          disabled={loading || submitted || !solution.trim() || feedback}
+          disabled={
+            loading || submitted || feedback ||
+            (isReview
+              ? !isReviewComposerValid({ verdict: reviewVerdict, findings: reviewFindings, approveJustification: reviewJustification })
+              : !solution.trim())
+          }
           sx={{ marginTop: "8px" }}
         >
           Submit Solution
@@ -600,6 +773,11 @@ function GamePage({ user, level, onChallengeComplete, onChallengeActive, resumeC
               <span style={{ color: evaluation === "correct" ? "#22c55e" : evaluation === "partially correct" ? "#f59e42" : "#ef4444" }}>
                 {evaluation.charAt(0).toUpperCase() + evaluation.slice(1)}
               </span>
+            </div>
+          )}
+          {isReview && reviewStats && (
+            <div style={{ marginTop: 8, fontSize: "0.9rem", color: "#334155" }}>
+              Bugs present: {reviewStats.bugsPresent ?? "—"} · You found: {reviewStats.bugsFound ?? "—"} · False findings: {reviewStats.falseFindings ?? "—"}
             </div>
           )}
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 4 }}>
