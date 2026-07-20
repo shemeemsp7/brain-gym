@@ -2,6 +2,7 @@
 // Client-safe (NEXT_PUBLIC_*) values may be imported anywhere; the server-only
 // values below are only referenced from API routes / server code.
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+export const PRODUCT_NAME = "Brain Gym";
 
 // --- server-only ---
 export const POSTGRES_URL = process.env.DATABASE_URL || "postgres://postgres:root@localhost:5432/ascendarium";

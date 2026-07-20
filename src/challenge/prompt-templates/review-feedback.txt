@@ -25,12 +25,22 @@ wrong, and a concrete input that exposes it.
 
 STEP 2 - Grade the trainee's review against YOUR audit:
 - Verdict match: did they approve correct code / request changes on buggy code?
-- Recall: which real bugs (from your audit) did they find? A finding counts
-  only if their reasoning is substantively right, not a lucky guess.
-- Precision: which of their reported bugs are NOT real bugs?
-- Justification quality: do they cite specific lines/logic? Did they supply a
-  triggering input where relevant? Generic statements ("logic seems off",
-  "should handle edge cases") do NOT count as findings.
+- Recall: which real bugs (from your audit) did they find? Each finding has
+  three required parts - Where (location), Why (reasoning), Trigger (an input
+  that exposes it) - and it counts as found ONLY if all three hold up: Where
+  must correctly identify the actual buggy location from your audit (not just
+  any line), Why must give sound, specific reasoning (not a lucky guess or a
+  generic statement), AND Trigger must be an input that, when you trace it
+  against the actual code yourself, genuinely exercises that bug - don't
+  accept it just because a value was supplied. If any of the three is wrong,
+  vague, or unrelated to the real bug, do not count it as found; call out the
+  shortfall in feedback instead (e.g. right idea but wrong line, or a trigger
+  that doesn't actually reach the buggy path).
+- Precision: which of their reported findings are NOT real bugs - wrong
+  location, invented behavior, or a trigger that doesn't actually reproduce
+  the claimed issue?
+- Generic statements ("logic seems off", "should handle edge cases") do NOT
+  count as findings regardless of what's filled into Where/Trigger.
 
 Evaluation mapping:
 - "correct": right verdict AND (all real bugs found with sound reasoning, or a

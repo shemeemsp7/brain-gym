@@ -10,29 +10,44 @@ import AccordionDetails from "@mui/material/AccordionDetails";
 import Typography from "@mui/material/Typography";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import Button from "@mui/material/Button";
-import StarIcon from "@mui/icons-material/Star";
-import StarBorderIcon from "@mui/icons-material/StarBorder";
+import Rating from "@mui/material/Rating";
 
 function ReviewChallenges({ user, onResume, showBeltRules, adminMode = false, selectedChallenges = [], onSelectChallenge, onSelectAll }) {
   const [challenges, setChallenges] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [expanded, setExpanded] = useState(null);
 
-  useEffect(() => {
-    // Only use user.id (numeric DB id) for fetching challenges
+  const load = React.useCallback(() => {
     if (!user?.id) {
       setChallenges([]);
       setLoading(false);
       return;
     }
     setLoading(true);
+    setError(false);
     fetchUserChallenges(user.id)
       .then(data => setChallenges(data.challenges || []))
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [user]);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   if (!user) return <div>Please log in to review your challenges.</div>;
-  if (loading) return <CircularProgress />;
+  if (loading) return <div style={{ textAlign: "center", padding: "32px 0" }}><CircularProgress aria-label="Loading challenges" /></div>;
+  if (error) {
+    return (
+      <div style={{ textAlign: "center", padding: "32px 0", color: "#64748b" }}>
+        <p>Couldn&apos;t load your challenges. Check your connection and try again.</p>
+        <Button variant="outlined" color="primary" onClick={load}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 900, margin: "32px auto" }}>
@@ -133,28 +148,17 @@ function ReviewChallenges({ user, onResume, showBeltRules, adminMode = false, se
                 {ch.clarity_rating && (
                   <div style={{ marginBottom: 8, display: "flex", alignItems: "center" }}>
                     <strong style={{ marginRight: 8 }}>Clarity rating:</strong>
-                    {[1, 2, 3, 4, 5].map(n => (
-                      n <= ch.clarity_rating
-                        ? <StarIcon key={n} fontSize="small" sx={{ color: "#f59e0b" }} />
-                        : <StarBorderIcon key={n} fontSize="small" sx={{ color: "#94a3b8" }} />
-                    ))}
+                    <Rating value={ch.clarity_rating} readOnly size="small" />
                   </div>
                 )}
                 {ch.status === "in_progress" && (
-                  <button
-                    style={{
-                      background: "#2563eb",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: 6,
-                      padding: "8px 18px",
-                      fontWeight: 600,
-                      cursor: "pointer"
-                    }}
+                  <Button
+                    variant="contained"
+                    color="primary"
                     onClick={() => onResume && onResume(ch)}
                   >
                     Resume Challenge
-                  </button>
+                  </Button>
                 )}
               </AccordionDetails>
             </Accordion>

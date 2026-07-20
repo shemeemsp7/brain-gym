@@ -8,14 +8,23 @@ import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
-import StarIcon from "@mui/icons-material/Star";
-import StarBorderIcon from "@mui/icons-material/StarBorder";
+import Rating from "@mui/material/Rating";
+import Skeleton from "@mui/material/Skeleton";
+import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { fetchChallenge, fetchFeedback, fetchClarification, saveUserChallenge } from "../src/challenge/apiService";
 import { INTEGRITY_MESSAGES, pickMessage } from "../src/integrity/messages";
 import { emptyFinding, composeReviewSolution, parseReviewSolution, isReviewComposerValid } from "../src/challenge/reviewFormat";
 
 const COPY_TOAST_SESSION_KEY = "bg_copy_toast_shown";
 const PASTE_CONFIRM_THRESHOLD = 80; // chars — smaller pastes (a variable name, a fragment) never nag
+const LOADING_MESSAGES = [
+  "Chalking up a fresh challenge…",
+  "Racking the weights…",
+  "Loading the bar…",
+  "Warming up your brain…"
+];
 
 // (Full GamePage implementation below)
 function GamePage({ user, level, type = "solve", onChallengeComplete, onChallengeActive, resumeChallengeData, onChallengeSaved }) {
@@ -36,6 +45,7 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
   const [notes, setNotes] = useState("");
   const [clarityRating, setClarityRating] = useState(null);
   const [saveStatus, setSaveStatus] = useState({ open: false, message: "", severity: "success" });
+  const [loadingMessage, setLoadingMessage] = useState(LOADING_MESSAGES[0]);
 
   // AI Code Review Gym composer state (doc/AI_CODE_REVIEW_GYM.md §5.2) — only
   // used when isReview; serialized into `solution` via the effect below so
@@ -175,6 +185,7 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
 
   async function getChallenge() {
     setLoading(true);
+    setLoadingMessage(LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
     setFeedback("");
     setSolution("");
     setEvaluation("");
@@ -572,7 +583,13 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
       )}
       <div className="challenge-box" onCopy={handleChallengeCopy}>
         {loading && !submitted ? (
-          <div className="loading">Loading...</div>
+          <div>
+            <div style={{ marginBottom: 10, color: "#64748b", fontStyle: "italic" }}>{loadingMessage}</div>
+            <Skeleton variant="text" width="70%" height={28} />
+            <Skeleton variant="text" width="95%" />
+            <Skeleton variant="text" width="90%" />
+            <Skeleton variant="rectangular" height={80} sx={{ borderRadius: 1, mt: 1 }} />
+          </div>
         ) : (
           <ReactMarkdown className="challenge-prompt">{challenge}</ReactMarkdown>
         )}
@@ -631,7 +648,7 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
             </div>
             {reviewVerdict === "approve" && (
               <label>
-                Why are you confident this is correct? Reference the logic you verified.
+                Why are you confident this is correct? Reference the logic you verified. <span style={{ color: "#ef4444" }}>*</span>
                 <textarea
                   className="solution-input"
                   value={reviewJustification}
@@ -643,7 +660,7 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
                 <div style={{
                   fontSize: "0.8rem",
                   marginTop: 2,
-                  color: reviewJustification.trim().length >= 80 ? "#16a34a" : "#94a3b8"
+                  color: reviewJustification.trim().length >= 80 ? "#16a34a" : "#64748b"
                 }}>
                   {reviewJustification.trim().length}/80 characters minimum
                   {reviewJustification.trim().length >= 80 ? " ✓" : " — keep going, lazy rubber-stamps don't count"}
@@ -652,14 +669,29 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
             )}
             {reviewVerdict === "request-changes" && (
               <div>
-                <div style={{ fontSize: "0.8rem", marginBottom: 8, color: "#94a3b8" }}>
+                <div style={{ fontSize: "0.8rem", marginBottom: 8, color: "#64748b" }}>
                   Fill in Where, Why, and a triggering Input for at least one finding to submit.
                 </div>
                 {reviewFindings.map((f, i) => (
                   <div key={i} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, marginBottom: 10 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 6 }}>Finding {i + 1}</div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                      <div style={{ fontWeight: 600 }}>Finding {i + 1}</div>
+                      <Tooltip title={reviewFindings.length > 1 ? "Remove this finding" : "At least one finding is required"}>
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            aria-label={`Remove finding ${i + 1}`}
+                            onClick={() => removeFinding(i)}
+                            disabled={loading || submitted || reviewFindings.length <= 1}
+                          >
+                            <DeleteOutlineIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </div>
                     <label>
-                      Where (line / section)
+                      Where (line / section) <span style={{ color: "#ef4444" }}>*</span>
                       <input
                         type="text"
                         className="solution-input"
@@ -670,7 +702,7 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
                       />
                     </label>
                     <label>
-                      Why it&apos;s wrong
+                      Why it&apos;s wrong <span style={{ color: "#ef4444" }}>*</span>
                       <textarea
                         className="solution-input"
                         value={f.why}
@@ -681,7 +713,7 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
                       />
                     </label>
                     <label>
-                      Input that exposes it
+                      Input that exposes it <span style={{ color: "#ef4444" }}>*</span>
                       <input
                         type="text"
                         className="solution-input"
@@ -691,11 +723,6 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
                         disabled={loading || submitted}
                       />
                     </label>
-                    {reviewFindings.length > 1 && (
-                      <Button size="small" color="inherit" onClick={() => removeFinding(i)} disabled={loading || submitted}>
-                        Remove finding
-                      </Button>
-                    )}
                   </div>
                 ))}
                 <Button variant="outlined" size="small" onClick={addFinding} disabled={loading || submitted}>
@@ -728,43 +755,43 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
             disabled={loading}
           />
         </label>
-        <Button
-          variant="contained"
-          color="primary"
-          type="submit"
-          disabled={
-            loading || submitted || feedback ||
-            (isReview
-              ? !isReviewComposerValid({ verdict: reviewVerdict, findings: reviewFindings, approveJustification: reviewJustification })
-              : !solution.trim())
-          }
-          sx={{ marginTop: "8px" }}
-        >
-          Submit Solution
-        </Button>
-        <Button
-          variant="outlined"
-          color="success"
-          onClick={handleManualSave}
-          disabled={loading || !solution.trim()}
-          sx={{ marginTop: "8px", marginLeft: "12px" }}
-        >
-          Save Progress
-        </Button>
-        <Button
-          variant="outlined"
-          color="info"
-          onClick={handleNextChallenge}
-          sx={{ marginTop: "8px", marginLeft: "12px" }}
-        >
-          Next Challenge
-        </Button>
-        <div style={{ marginTop: 10, fontSize: "0.8rem", color: "#94a3b8", fontStyle: "italic" }}>
+        <div className="solution-actions" style={{ marginTop: "8px" }}>
+          <Button
+            variant="contained"
+            color="primary"
+            type="submit"
+            disabled={
+              loading || submitted || feedback ||
+              (isReview
+                ? !isReviewComposerValid({ verdict: reviewVerdict, findings: reviewFindings, approveJustification: reviewJustification })
+                : !solution.trim())
+            }
+          >
+            Submit Solution
+          </Button>
+          <Button
+            variant="outlined"
+            color="success"
+            onClick={handleManualSave}
+            disabled={loading || !solution.trim()}
+          >
+            Save Progress
+          </Button>
+          <Button
+            variant="outlined"
+            color="info"
+            onClick={handleNextChallenge}
+            sx={{ marginLeft: { sm: "auto" } }}
+          >
+            Next Challenge
+          </Button>
+        </div>
+        <div style={{ marginTop: 10, fontSize: "0.8rem", color: "#64748b", fontStyle: "italic" }}>
           {INTEGRITY_MESSAGES.MIRROR2}
         </div>
       </form>
       {feedback && (
-        <div className="feedback-box">
+        <div className="feedback-box" aria-live="polite">
           <strong>Feedback:</strong>
           <ReactMarkdown>{feedback}</ReactMarkdown>
           {evaluation && (
@@ -784,16 +811,11 @@ function GamePage({ user, level, type = "solve", onChallengeComplete, onChalleng
             <span style={{ marginRight: 6, fontSize: "0.9rem", color: "#64748b" }}>
               How clear was this challenge?
             </span>
-            {[1, 2, 3, 4, 5].map(n => (
-              <span
-                key={n}
-                onClick={() => handleRateClarity(n)}
-                style={{ cursor: "pointer", color: "#f59e0b", display: "inline-flex" }}
-                title={`Rate ${n} star${n > 1 ? "s" : ""}`}
-              >
-                {clarityRating && n <= clarityRating ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
-              </span>
-            ))}
+            <Rating
+              value={clarityRating || 0}
+              size="small"
+              onChange={(e, newValue) => { if (newValue) handleRateClarity(newValue); }}
+            />
           </div>
         </div>
       )}

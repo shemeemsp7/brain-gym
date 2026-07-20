@@ -14,20 +14,12 @@ import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
+import Snackbar from "@mui/material/Snackbar";
+import Alert from "@mui/material/Alert";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents"; // Trophy icon as belt symbol
 import { fetchUserProfile } from "../src/challenge/apiService";
-
-// Belt color mapping
-const BELT_COLORS = {
-  white: "#fff",
-  yellow: "#fde68a",
-  orange: "#fb923c",
-  green: "#22c55e",
-  blue: "#3b82f6",
-  purple: "#a78bfa",
-  brown: "#92400e",
-  black: "#000"
-};
+import { beltColor, beltTextColor } from "../src/beltColors";
+import { PRODUCT_NAME } from "../src/config";
 
 const LEVELS = [
   { label: "Easy (Beginner)", value: "easy" },
@@ -60,6 +52,8 @@ function App() {
   const [showRegister, setShowRegister] = useState(false);
   const [belt, setBelt] = useState(user?.belt || "white");
   const [profile, setProfile] = useState(null);
+  const [beltCelebration, setBeltCelebration] = useState(null);
+  const [streakToast, setStreakToast] = useState({ open: false, message: "" });
 
   // Ensure belt updates when session changes
   React.useEffect(() => {
@@ -241,13 +235,28 @@ function App() {
     setBeltRulesOpen(false);
   }
 
-  // Update belt in UI after challenge save (if backend returns new belt)
+  // Update belt in UI after challenge save (if backend returns new belt),
+  // and surface the two moments of delight the product has but never shows:
+  // a belt promotion, and the streak ticking up for the day.
   function handleChallengeSaved(newBelt) {
-    if (newBelt && newBelt !== belt) {
+    const beltChanged = Boolean(newBelt && newBelt !== belt);
+    if (beltChanged) {
       setBelt(newBelt);
+      setBeltCelebration(newBelt);
     }
-    // Stats/streak/belt-progress may all have changed after a save.
-    refreshProfile();
+    const prevStreakCount = profile?.streak?.count ?? 0;
+    if (!user?.id) return;
+    fetchUserProfile(user.id)
+      .then(data => {
+        setProfile(data);
+        const newStreakCount = data?.streak?.count ?? 0;
+        if (newStreakCount > prevStreakCount) {
+          setStreakToast({ open: true, message: `Day ${newStreakCount} — streak alive 🔥` });
+        }
+      })
+      .catch(() => {
+        // Non-critical — stats/streak just won't show this time.
+      });
   }
 
   return (
@@ -255,6 +264,16 @@ function App() {
       {user && (
         <div className="banner">
           <div className="banner-left">
+            <span
+              className="banner-logo"
+              onClick={handleHome}
+              title="Go to Home"
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") handleHome(); }}
+            >
+              🧠💪 {PRODUCT_NAME}
+            </span>
             <span
               className="banner-welcome"
               style={{ cursor: "pointer" }}
@@ -266,8 +285,8 @@ function App() {
             <span
               className="banner-belt"
               style={{
-                background: BELT_COLORS[belt?.toLowerCase()] || "#fff",
-                color: belt?.toLowerCase() === "white" ? "#222" : "#fff",
+                background: beltColor(belt),
+                color: beltTextColor(belt),
                 border: "2px solid #e2e8f0",
                 borderRadius: "8px",
                 padding: "2px 12px",
@@ -299,7 +318,7 @@ function App() {
                   marginLeft: "12px",
                   fontWeight: 600,
                   fontSize: "0.95rem",
-                  color: profile.streak.count > 0 ? "#ea580c" : "#94a3b8"
+                  color: profile.streak.count > 0 ? "#fed7aa" : "rgba(255,255,255,0.75)"
                 }}
               >
                 🔥 {profile.streak.count}-day streak
@@ -308,7 +327,7 @@ function App() {
             {profile?.stats && (
               <span
                 className="banner-stats"
-                style={{ marginLeft: "12px", fontSize: "0.85rem", color: "#64748b" }}
+                style={{ marginLeft: "12px", fontSize: "0.85rem", color: "rgba(255,255,255,0.85)" }}
               >
                 Easy {profile.stats.easy} · Medium {profile.stats.medium} · Advanced {profile.stats.advanced}
               </span>
@@ -317,29 +336,41 @@ function App() {
           <div className="banner-right">
             <Button
               variant={showReview ? "contained" : "outlined"}
-              color="info"
               sx={{
                 marginLeft: "12px",
                 fontWeight: 600,
                 borderRadius: 8,
                 boxShadow: "none",
                 textTransform: "none",
-                padding: "6px 18px"
+                padding: "6px 18px",
+                color: showReview ? "#2563eb" : "#fff",
+                backgroundColor: showReview ? "#fff" : "transparent",
+                borderColor: "rgba(255,255,255,0.7)",
+                "&:hover": {
+                  backgroundColor: showReview ? "#e2e8f0" : "rgba(255,255,255,0.15)",
+                  borderColor: "#fff"
+                }
               }}
               onClick={handleShowReview}
             >
-              Review Past Challenges
+              Training Log
             </Button>
             <Button
               variant={showLeaderboard ? "contained" : "outlined"}
-              color="info"
               sx={{
                 marginLeft: "12px",
                 fontWeight: 600,
                 borderRadius: 8,
                 boxShadow: "none",
                 textTransform: "none",
-                padding: "6px 18px"
+                padding: "6px 18px",
+                color: showLeaderboard ? "#2563eb" : "#fff",
+                backgroundColor: showLeaderboard ? "#fff" : "transparent",
+                borderColor: "rgba(255,255,255,0.7)",
+                "&:hover": {
+                  backgroundColor: showLeaderboard ? "#e2e8f0" : "rgba(255,255,255,0.15)",
+                  borderColor: "#fff"
+                }
               }}
               onClick={handleShowLeaderboard}
             >
@@ -348,14 +379,20 @@ function App() {
             {user?.role === "admin" && (
               <Button
                 variant={showAdminPage ? "contained" : "outlined"}
-                color="info"
                 sx={{
                   marginLeft: "12px",
                   fontWeight: 600,
                   borderRadius: 8,
                   boxShadow: "none",
                   textTransform: "none",
-                  padding: "6px 18px"
+                  padding: "6px 18px",
+                  color: showAdminPage ? "#2563eb" : "#fff",
+                  backgroundColor: showAdminPage ? "#fff" : "transparent",
+                  borderColor: "rgba(255,255,255,0.7)",
+                  "&:hover": {
+                    backgroundColor: showAdminPage ? "#e2e8f0" : "rgba(255,255,255,0.15)",
+                    borderColor: "#fff"
+                  }
                 }}
                 onClick={() => setShowAdminPage(true)}
               >
@@ -369,6 +406,31 @@ function App() {
         </div>
       )}
       <BeltRulesModal open={beltRulesOpen} onClose={handleHideBeltRules} />
+      <Dialog open={!!beltCelebration} onClose={() => setBeltCelebration(null)}>
+        <DialogTitle>🎉 New belt earned!</DialogTitle>
+        <DialogContent style={{ textAlign: "center", padding: "24px 32px" }}>
+          <EmojiEventsIcon style={{ color: "#fbbf24", fontSize: "3rem" }} />
+          <p style={{ fontSize: "1.15rem", fontWeight: 600, color: "#1e293b", margin: "8px 0 0" }}>
+            You earned your {beltCelebration} belt!
+          </p>
+          <p style={{ color: "#64748b" }}>Keep training — the next one&apos;s already within reach.</p>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBeltCelebration(null)} color="primary" variant="contained">
+            Nice!
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Snackbar
+        open={streakToast.open}
+        autoHideDuration={4000}
+        onClose={() => setStreakToast({ ...streakToast, open: false })}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert onClose={() => setStreakToast({ ...streakToast, open: false })} severity="success" sx={{ width: "100%" }}>
+          {streakToast.message}
+        </Alert>
+      </Snackbar>
       {!user ? (
         showRegister ? (
           <RegisterPage onSwitchToLogin={handleSwitchToLogin} />

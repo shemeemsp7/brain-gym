@@ -1,62 +1,59 @@
-import React, { useState, useEffect } from "react";
-import LeaderboardModal from "./LeaderboardModal";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import ReviewChallenges from "./ReviewChallenges";
+import BeltBadge from "./BeltBadge";
+import { formatLocalTime } from "../src/challenge/dateUtils";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import Paper from "@mui/material/Paper";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TableRow from "@mui/material/TableRow";
 
 function AdminPage({ user, onBack }) {
   const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [clearAll, setClearAll] = useState(false);
+  const [clearAllCount, setClearAllCount] = useState(null);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const [selectedChallenges, setSelectedChallenges] = useState([]);
-  useEffect(() => {
+
+  const loadUsers = useCallback(() => {
+    setLoading(true);
+    setError(false);
     fetch("/api/leaderboard?all=true")
-      .then(res => res.json())
-      .then(data => setUsers(data.leaderboard || []));
+      .then(res => {
+        if (!res.ok) throw new Error("Failed to load users");
+        return res.json();
+      })
+      .then(data => setUsers(data.leaderboard || []))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
   }, []);
 
-  const BELT_COLORS = {
-    white: "#fff",
-    yellow: "#fde68a",
-    orange: "#fb923c",
-    green: "#22c55e",
-    blue: "#3b82f6",
-    purple: "#a78bfa",
-    brown: "#92400e",
-    black: "#000"
-  };
-
-  function formatLocalTime(utcString) {
-    if (!utcString) return "";
-    let date;
-    if (utcString.includes("T")) {
-      date = new Date(utcString);
-    } else {
-      const match = utcString.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?/);
-      if (match) {
-        const iso = `${match[1]}T${match[2]}${match[3] ? match[3].slice(0, 4) : ""}Z`;
-        date = new Date(iso);
-      } else {
-        date = new Date(utcString);
-      }
-    }
-    return date.toLocaleString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true
-    });
-  }
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   function handleUserClick(u) {
     setSelectedUser(u);
+  }
+
+  function handleUserKeyDown(e, u) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleUserClick(u);
+    }
   }
 
   function handleBack() {
@@ -66,7 +63,12 @@ function AdminPage({ user, onBack }) {
 
   function handleClearAllChallenges() {
     setClearAll(true);
+    setClearAllCount(null);
     setClearDialogOpen(true);
+    fetch(`/api/user-challenge-list?user_id=${selectedUser.id}`)
+      .then(res => res.json())
+      .then(data => setClearAllCount((data.challenges || []).length))
+      .catch(() => setClearAllCount(null));
   }
 
   function handleClearSomeChallenges() {
@@ -74,17 +76,42 @@ function AdminPage({ user, onBack }) {
     setClearDialogOpen(true);
   }
 
-  function handleConfirmClear() {
-    // TODO: Implement API call to clear challenges
-    setClearDialogOpen(false);
-  }
-
   function handleCancelClear() {
     setClearDialogOpen(false);
   }
 
+  async function handleConfirmClear() {
+    if (clearAll) {
+      await fetch(`/api/user-challenge-list?user_id=${selectedUser.id}`, {
+        method: "DELETE"
+      });
+    } else {
+      await fetch(`/api/user-challenge-list?user_id=${selectedUser.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge_ids: selectedChallenges })
+      });
+    }
+    setSelectedChallenges([]);
+    setClearDialogOpen(false);
+    // ReviewChallenges refetches whenever its `user` prop reference changes;
+    // bumping this token forces a fresh object even though selectedUser's
+    // fields haven't changed, which is enough to trigger its effect.
+    setRefreshToken(t => t + 1);
+  }
+
+  const clearCount = clearAll ? clearAllCount : selectedChallenges.length;
+
+  // Only produce a new object (and thus re-trigger ReviewChallenges' fetch
+  // effect, which depends on `user` by reference) when the selected user or
+  // the refresh token actually changes — not on every unrelated re-render.
+  const reviewUser = useMemo(
+    () => (selectedUser ? { ...selectedUser, _refresh: refreshToken } : null),
+    [selectedUser, refreshToken]
+  );
+
   return (
-    <div style={{ maxWidth: 1000, margin: "32px auto" }}>
+    <div style={{ maxWidth: 1000, margin: "32px auto", padding: "0 16px" }}>
       <h2>Admin Page</h2>
       {!selectedUser ? (
         <div>
@@ -94,54 +121,57 @@ function AdminPage({ user, onBack }) {
               Back
             </Button>
           </div>
-          <div style={{ maxWidth: 900, margin: "0 auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", background: "#fff", borderRadius: 8, boxShadow: "0 2px 8px #e0e7ef" }}>
-              <thead>
-                <tr style={{ background: "#e0e7ef" }}>
-                  <th style={{ padding: "10px 8px" }}>Rank</th>
-                  <th style={{ padding: "10px 8px" }}>Name</th>
-                  <th style={{ padding: "10px 8px" }}>Belt</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right" }}>Score</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right" }}>Easy</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right" }}>Medium</th>
-                  <th style={{ padding: "10px 8px", textAlign: "right" }}>Advanced</th>
-                  <th style={{ padding: "10px 8px" }}>Last Submission</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(u => (
-                  <tr key={u.id} style={{ cursor: "pointer", background: u.isCurrent ? "#e0e7ef" : "#fff" }} onClick={() => handleUserClick(u)}>
-                    <td style={{ padding: "8px" }}>{u.rank}</td>
-                    <td style={{ padding: "8px" }}>{u.name}</td>
-                    <td style={{ padding: "8px" }}>
-                      <span style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 4
-                      }}>
-                        {/* KarateBeltIcon can be imported and used here if available */}
-                        <span style={{
-                          display: "inline-block",
-                          width: 22,
-                          height: 12,
-                          background: BELT_COLORS[u.belt] || "#fff",
-                          borderRadius: 4,
-                          marginRight: 4,
-                          border: "1px solid #e2e8f0"
-                        }} />
-                        {u.belt ? u.belt.charAt(0).toUpperCase() + u.belt.slice(1) : "White"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>{u.score}</td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>{u.easy_count}</td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>{u.medium_count}</td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>{u.advanced_count}</td>
-                    <td style={{ padding: "8px" }}>{formatLocalTime(u.last_submission)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "32px 0" }}>
+              <CircularProgress aria-label="Loading users" />
+            </div>
+          ) : error ? (
+            <div style={{ textAlign: "center", padding: "32px 0", color: "#64748b" }}>
+              <p>Couldn&apos;t load users. Check your connection and try again.</p>
+              <Button variant="outlined" color="primary" onClick={loadUsers}>
+                Retry
+              </Button>
+            </div>
+          ) : users.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "32px 0", color: "#64748b" }}>
+              No users yet.
+            </div>
+          ) : (
+            <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: "0 2px 8px #2563eb22" }}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700 }}>Rank</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Belt</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>Score</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }} title="Easy / Medium / Advanced">E / M / A</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Last Submission</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {users.map(u => (
+                    <TableRow
+                      key={u.id}
+                      hover
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleUserClick(u)}
+                      onKeyDown={e => handleUserKeyDown(e, u)}
+                      style={{ cursor: "pointer", background: u.isCurrent ? "#e0e7ef" : undefined }}
+                    >
+                      <TableCell>{u.rank}</TableCell>
+                      <TableCell>{u.name}</TableCell>
+                      <TableCell><BeltBadge belt={u.belt} /></TableCell>
+                      <TableCell align="right">{u.score}</TableCell>
+                      <TableCell align="right">{u.easy_count} / {u.medium_count} / {u.advanced_count}</TableCell>
+                      <TableCell>{formatLocalTime(u.last_submission)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
         </div>
       ) : (
         <div>
@@ -149,7 +179,7 @@ function AdminPage({ user, onBack }) {
             Back to User List
           </Button>
           <ReviewChallenges
-            user={selectedUser}
+            user={reviewUser}
             adminMode={true}
             selectedChallenges={selectedChallenges}
             onSelectChallenge={(id, checked) => {
@@ -192,39 +222,16 @@ function AdminPage({ user, onBack }) {
               {clearAll ? "Clear All Challenges" : "Clear Selected Challenges"}
             </DialogTitle>
             <DialogContent>
-              Are you sure you want to {clearAll ? "clear all challenges" : "clear selected challenges"} for this user? This action cannot be undone.
+              Are you sure you want to {clearAll
+                ? `clear ${clearCount === null ? "all" : `${clearCount}`} challenge${clearCount === 1 ? "" : "s"}`
+                : `clear ${clearCount} selected challenge${clearCount === 1 ? "" : "s"}`} for {selectedUser.name}?
+              This action cannot be undone.
             </DialogContent>
             <DialogActions>
               <Button onClick={handleCancelClear} color="inherit">
                 Cancel
               </Button>
-              <Button
-                onClick={async () => {
-                  if (clearAll) {
-                    await fetch(`/api/user-challenge-list?user_id=${selectedUser.id}`, {
-                      method: "DELETE"
-                    });
-                  } else {
-                    await fetch(`/api/user-challenge-list?user_id=${selectedUser.id}`, {
-                      method: "DELETE",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ challenge_ids: selectedChallenges })
-                    });
-                  }
-                  setSelectedChallenges([]);
-                  setClearDialogOpen(false);
-                  // Re-fetch challenges for selected user
-                  fetch(`/api/user-challenge-list?user_id=${selectedUser.id}`)
-                    .then(res => res.json())
-                    .then(data => {
-                      // If ReviewChallenges is using local state, trigger a refresh via prop or state
-                      // For now, reload the page section by resetting selectedUser
-                      setSelectedUser({ ...selectedUser }); // triggers re-render
-                    });
-                }}
-                color="error"
-                variant="contained"
-              >
+              <Button onClick={handleConfirmClear} color="error" variant="contained">
                 Confirm
               </Button>
             </DialogActions>

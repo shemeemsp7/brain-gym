@@ -4,7 +4,7 @@ import Button from "@mui/material/Button";
 import TextField from "@mui/material/TextField";
 import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";
-import { API_BASE } from "../src/config";
+import { PRODUCT_NAME } from "../src/config";
 
 function RegisterPage({ onRegister, onSwitchToLogin }) {
   const [name, setName] = useState("");
@@ -43,7 +43,7 @@ function RegisterPage({ onRegister, onSwitchToLogin }) {
 
   return (
     <div className="login-container">
-      <h2 className="login-title">Register for Logic Ascendarium</h2>
+      <h2 className="login-title">Register for {PRODUCT_NAME}</h2>
       <form className="login-form" onSubmit={handleSubmit}>
         <TextField
           label="Name"

@@ -28,17 +28,73 @@
   gap: 18px;
 }
 
-.MuiTextField-root {
+.login-container .MuiTextField-root {
   background: #fff;
   border-radius: 8px;
 }
 
-.MuiButton-root {
+.login-container .MuiButton-root {
   font-size: 1rem;
   font-weight: 600;
   border-radius: 8px;
 }
 
-.MuiAlert-root {
+.login-container .MuiAlert-root {
   margin-top: 8px;
+}
+
+.login-page {
+  display: flex;
+  min-height: 100vh;
+  align-items: stretch;
+  justify-content: center;
+  background: #f8fafc;
+  flex-wrap: wrap;
+}
+
+.login-hero {
+  flex: 1;
+  max-width: 520px;
+  min-width: 0;
+  padding: 48px 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.login-panel {
+  flex: 1;
+  max-width: 400px;
+  min-width: 320px;
+  background: #fff;
+  border-radius: 24px;
+  box-shadow: 0 8px 40px #64748b33;
+  padding: 56px 36px;
+  margin: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@media (max-width: 900px) {
+  .login-page {
+    flex-direction: column;
+  }
+  .login-hero {
+    max-width: 100%;
+    padding: 32px 24px 0;
+    text-align: center;
+  }
+  .login-panel {
+    max-width: 480px;
+    margin: 24px auto;
+    width: calc(100% - 32px);
+  }
+}
+
+@media (max-width: 600px) {
+  .login-hero {
+    display: none;
+  }
 }
